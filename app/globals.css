@@ -1,44 +1,73 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Serif-display använder samma variabel som next/font sätter på html */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-serif);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Design tokens – warm minimalism (Byggplattformen) */
+:root {
+  --color-background: #faf8f5;
+  --color-foreground: #2a2520;
+  --color-primary: #8c7860;
+  --color-primary-dark: #6b5a47;
+  --color-accent: #cdb49b;
+  --color-border: #e8e3dc;
+  --color-muted: #766b60;
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
-    "Inter", sans-serif;
+  height: 100%;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes slide-in-right {
   from {
     transform: translateX(100%);
+    opacity: 0;
   }
   to {
-    transform: translateX(0%);
+    transform: translateX(0);
+    opacity: 1;
   }
 }
 
-/* Lite mer techig display-font för huvudrubriker och logotyp */
-.font-display {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Mono",
-    "Roboto Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-    monospace;
-  letter-spacing: 0.04em;
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out both;
+}
+
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-500 { animation-delay: 500ms; }
+
+.hover-lift {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px -10px rgba(42, 37, 32, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up {
+    animation: none !important;
+  }
 }
