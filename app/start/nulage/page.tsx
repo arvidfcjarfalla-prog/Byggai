@@ -64,7 +64,7 @@ export default function NulagePage() {
     if (data.projectType === "renovering") router.push("/start/renovering");
     else if (data.projectType === "tillbyggnad") router.push("/start/tillbyggnad");
     else if (data.projectType === "nybyggnation") router.push("/start/nybyggnation");
-    else router.push("/start/underlag");
+    else router.push("/start/beskrivning");
   };
 
   return (

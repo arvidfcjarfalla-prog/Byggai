@@ -23,8 +23,8 @@ export default function TillbyggnadPage() {
       tillbyggnad: { storlek, typ, befintlig },
     });
 
-    setCurrentStep(4);
-    router.push("/start/underlag");
+    setCurrentStep(5);
+    router.push("/start/beskrivning");
   };
 
   return (

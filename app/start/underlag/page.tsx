@@ -7,27 +7,113 @@ import {
   useWizard,
   type FileDoc,
   type FileTag,
+  type RelatesTo,
 } from "../../components/wizard-context";
 import { WizardProgress } from "../../components/wizard-progress";
 import { Shell } from "../../components/ui/shell";
 import { Card } from "../../components/ui/card";
 import { Notice } from "../../components/ui/notice";
 import { Breadcrumbs, type Crumb } from "../../components/ui/breadcrumbs";
+import { NextUp } from "../../components/next-up";
 
 const FILE_TAGS: { id: FileTag; label: string }[] = [
   { id: "ritning", label: "Ritning" },
   { id: "foto", label: "Foto" },
   { id: "bygghandling", label: "Bygghandling" },
+  { id: "detaljplan", label: "Detaljplan" },
   { id: "ovrigt", label: "Övrigt" },
 ];
 
-const FOTOGUIDE_ITEMS = [
-  "Ta översiktsfoto av varje rum",
+const RELATES_TO_OPTIONS: { id: RelatesTo; label: string }[] = [
+  { id: "kök", label: "Kök" },
+  { id: "badrum", label: "Badrum" },
+  { id: "fasad", label: "Fasad" },
+  { id: "mark", label: "Mark" },
+  { id: "tak", label: "Tak" },
+  { id: "el", label: "El" },
+  { id: "vvs", label: "VVS" },
+  { id: "övrigt", label: "Övrigt" },
+];
+
+const FOTOGUIDE_RENOVERING = [
+  "Översiktsfoto av varje rum som ska renoveras",
+  "Foton av fönster, dörrar och tak i berörda rum",
+  "Befintliga el- och VVS-anläggningar (doser, kranar, avlopp)",
+  "Mät och anteckna längd, bredd och takhöjd",
+  "Skador eller fukt (om synliga)",
+  "Enkel skiss med mått och placering av väggar",
+  "Foton av golv och eventuell befintlig tätskikt (badrum)",
+  "Ventilation och fönster (kök/badrum)",
+];
+
+const FOTOGUIDE_TILLBYGGNAD = [
+  "Foto av fasaden där tillbyggnaden ska ansluta",
+  "Översikt av tomt/trädgård och tillgång",
+  "Befintlig grund och väggar vid anslutningspunkt",
+  "Mått på befintlig byggnad och önskad tillbyggnad",
+  "El och VVS – var finns anslutningar idag",
+  "Enkel planritning över nuvarande och önskat läge",
+  "Foton av tak och takfall (för takanslutning)",
+  "Eventuella hinder (träd, ledningar, gränser)",
+  "Sektion eller skiss som visar höjd och nivåer",
+];
+
+const FOTOGUIDE_NYBYGGNAD = [
+  "Platsen/tomten – översiktsfoto och läge",
+  "Tillgång och väg för maskiner och material",
+  "Befintliga ledningar och avlopp (om på tomt)",
+  "Närliggande byggnader och gränser",
+  "Markförhållanden (sluttning, sten, vatten)",
+  "Solkurs och vindriktning (för placering)",
+  "Detaljplan eller bygglov – foto av beslut/karta",
+  "Enkel skiss med önskad placering och mått",
+  "Eventuella krav från kommun eller BRF",
+  "Foton från liknande byggnader du gillar (referens)",
+];
+
+const FOTOGUIDE_DEFAULT = [
+  "Ta översiktsfoto av varje berört område",
   "Fota detaljer (fönster, dörrar, tak)",
   "Mät och anteckna mått (längd, bredd, höjd)",
   "Fota befintliga installationer (el, vatten)",
   "Skapa enkel skiss om möjligt",
+  "Eventuella ritningar eller handlingar du redan har",
 ];
+
+function getFotoguideItems(projectType: string | null): string[] {
+  if (projectType === "renovering") return FOTOGUIDE_RENOVERING;
+  if (projectType === "tillbyggnad") return FOTOGUIDE_TILLBYGGNAD;
+  if (projectType === "nybyggnation") return FOTOGUIDE_NYBYGGNAD;
+  return FOTOGUIDE_DEFAULT;
+}
+
+/** Saknade / rekommenderade dokument utifrån nuläge och projekttyp */
+function getSuggestedDocs(
+  currentPhase: string | null,
+  projectType: string | null
+): { missing: string[]; niceToHave: string[] } {
+  const missing: string[] = [];
+  const niceToHave: string[] = [];
+
+  if (currentPhase === "ritningar" || currentPhase === "fardigt") {
+    missing.push("Ritning / planritning");
+    missing.push("Sektion eller bygghandling (om du har)");
+  }
+  if (currentPhase === "skiss") {
+    missing.push("Skiss eller planritning");
+  }
+  if (currentPhase === "ide") {
+    missing.push("Enkel skiss eller mått (underlättar offerter)");
+  }
+
+  if (projectType === "nybyggnation") {
+    niceToHave.push("Detaljplan");
+    niceToHave.push("Bygglov / bygglovsansökan");
+    niceToHave.push("Nybyggnadskarta eller tomtkarta");
+  }
+
+  return { missing, niceToHave };
+}
 
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -37,13 +123,19 @@ function formatSize(bytes: number) {
 
 export default function UnderlagPage() {
   const router = useRouter();
-  const { data, setCurrentStep, stepConfig, addFile, removeFile, updateFileTags } =
+  const { data, setCurrentStep, stepConfig, addFile, removeFile, updateFileTags, updateFileRelatesTo } =
     useWizard();
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const files = data.files ?? [];
   const projectType = data.projectType;
+  const currentPhase = data.currentPhase;
+  const fotoguideItems = getFotoguideItems(projectType);
+  const { missing: missingDocs, niceToHave: niceToHaveDocs } = getSuggestedDocs(
+    currentPhase ?? null,
+    projectType ?? null
+  );
   const typePath =
     projectType === "renovering"
       ? "/start/renovering"
@@ -64,6 +156,7 @@ export default function UnderlagPage() {
     { href: "/start", label: "Projekttyp" },
     { href: "/start/nulage", label: "Nuläge" },
     ...(typePath && typeLabel ? [{ href: typePath, label: typeLabel } as Crumb] : []),
+    { href: "/start/beskrivning", label: "Beskrivning" },
     { label: "Underlag" },
   ];
 
@@ -102,7 +195,7 @@ export default function UnderlagPage() {
 
   return (
     <Shell
-      backHref={typePath ?? "/start/nulage"}
+      backHref="/start/beskrivning"
       backLabel="Tillbaka"
     >
       <section id="content" className="px-6 py-16 lg:py-20">
@@ -115,13 +208,34 @@ export default function UnderlagPage() {
           <h1 className="mt-6 text-3xl font-bold tracking-tight text-[#2A2520] md:text-4xl">
             Ritningar, foton och handlingar
           </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#766B60]">
-            Ladda upp filer du redan har (ritningar, foton, bygghandlingar) eller
-            använd vår fotoguide om du börjar från noll.
+          <p className="mt-2 text-sm font-medium text-[#8C7860]">
+            Vi frågar så att entreprenörer kan ge dig bättre offerter – rätt underlag sparar tid för alla.
           </p>
+          <div className="mt-4">
+            <NextUp nextStepName="Omfattning" upcomingSteps={["Budget", "Tidplan", "Sammanfattning"]} />
+          </div>
           <div className="mt-8">
             <WizardProgress />
           </div>
+
+          {files.length === 0 && (
+            <Card className="mt-8 border-[#CDB49B]/40 bg-[#CDB49B]/5">
+              <h2 className="mb-2 text-base font-bold text-[#2A2520]">
+                Vad saknas?
+              </h2>
+              <p className="mb-4 text-sm text-[#766B60]">
+                Du kan fortfarande gå vidare. Men ju bättre underlag, desto bättre offert.
+              </p>
+              <ul className="space-y-2 text-sm text-[#2A2520]">
+                {getFotoguideItems(projectType ?? null).slice(0, 6).map((item, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full border border-[#8C7860] bg-transparent" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           {/* Drop zone */}
           <div
@@ -214,6 +328,17 @@ export default function UnderlagPage() {
                           {t.label}
                         </button>
                       ))}
+                      <select
+                        value={f.relatesTo ?? ""}
+                        onChange={(e) => updateFileRelatesTo(f.id, (e.target.value || undefined) as RelatesTo | undefined)}
+                        className="rounded-lg border border-[#E8E3DC] bg-white px-3 py-1.5 text-xs text-[#2A2520] focus:border-[#8C7860] focus:outline-none"
+                        title="Relaterar till"
+                      >
+                        <option value="">Relaterar till</option>
+                        {RELATES_TO_OPTIONS.map((o) => (
+                          <option key={o.id} value={o.id}>{o.label}</option>
+                        ))}
+                      </select>
                       <button
                         type="button"
                         onClick={() => removeFile(f.id)}
@@ -237,11 +362,11 @@ export default function UnderlagPage() {
                 Fotoguide – inga filer ännu?
               </h2>
               <p className="mb-4 text-sm text-[#766B60]">
-                Följ checklistan nedan för att skapa underlag som underlättar
-                nästa steg.
+                Följ punkterna nedan för att skapa underlag som underlättar
+                nästa steg och ger bättre offerter.
               </p>
               <ul className="space-y-2">
-                {FOTOGUIDE_ITEMS.map((item, i) => (
+                {fotoguideItems.map((item, i) => (
                   <li
                     key={i}
                     className="flex items-center gap-3 rounded-xl border border-[#E8E3DC] bg-white px-4 py-3"
@@ -256,6 +381,38 @@ export default function UnderlagPage() {
             </Card>
           )}
 
+          {(missingDocs.length > 0 || niceToHaveDocs.length > 0) && (
+            <Card className="mt-6 border-[#CDB49B]/40 bg-[#CDB49B]/5">
+              <h2 className="mb-2 text-base font-bold text-[#2A2520]">
+                Rekommenderade dokument
+              </h2>
+              {missingDocs.length > 0 && (
+                <div className="mb-3">
+                  <p className="mb-1 text-xs font-semibold uppercase text-[#8C7860]">Bra att lägga till</p>
+                  <ul className="flex flex-wrap gap-2">
+                    {missingDocs.map((d, i) => (
+                      <li key={i} className="rounded-full bg-[#8C7860]/15 px-3 py-1 text-sm font-medium text-[#6B5A47]">
+                        {d}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {niceToHaveDocs.length > 0 && (
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase text-[#766B60]">Bra om du har</p>
+                  <ul className="flex flex-wrap gap-2">
+                    {niceToHaveDocs.map((d, i) => (
+                      <li key={i} className="rounded-full border border-[#E8E3DC] bg-white px-3 py-1 text-sm text-[#766B60]">
+                        {d}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Card>
+          )}
+
           <Notice className="mt-8">
             Dina filer sparas endast i webbläsaren (localStorage). Ingen
             uppladdning till server i denna version.
@@ -263,13 +420,7 @@ export default function UnderlagPage() {
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <Link
-              href={
-                projectType === "renovering"
-                  ? "/start/renovering"
-                  : projectType === "tillbyggnad"
-                    ? "/start/tillbyggnad"
-                    : "/start/nybyggnation"
-              }
+              href="/start/beskrivning"
               className="inline-flex items-center gap-2 rounded-2xl border-2 border-[#E8E3DC] bg-white px-6 py-4 text-sm font-semibold text-[#766B60] outline-none transition-all hover:border-[#CDB49B] hover:bg-[#CDB49B]/10 focus-visible:ring-2 focus-visible:ring-[#8C7860]"
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">

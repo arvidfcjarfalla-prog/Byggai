@@ -113,9 +113,9 @@ export default function RenoveringPage() {
     if (selectedCount === 0) return;
 
     updateData({ renovering: selectedRooms });
-    setCurrentStep(4);
+    setCurrentStep(5);
 
-    router.push("/start/underlag");
+    router.push("/start/beskrivning");
   };
 
   const getComplexityColor = (complexity: string) => {

@@ -23,6 +23,9 @@ export default function BudgetPage() {
   const [financing, setFinancing] = useState<string>(
     data.budget?.financing ?? ""
   );
+  const [budgetAcknowledged, setBudgetAcknowledged] = useState<boolean>(
+    data.budget?.budgetAcknowledged ?? false
+  );
 
   const projectType = data.projectType;
   const typeCrumb: Crumb | null =
@@ -62,6 +65,7 @@ export default function BudgetPage() {
         intervalMax: maxNum,
         isHard,
         financing: financing as "egen" | "bank" | "osaker" | undefined,
+        budgetAcknowledged: budgetWarning ? budgetAcknowledged : undefined,
       },
     });
     const idx = stepConfig.findIndex((s) => s.path === "/start/tidplan");
@@ -74,10 +78,16 @@ export default function BudgetPage() {
     const low = minNum ?? 0;
     const high = maxNum ?? low;
     if (projectType === "nybyggnation" && high > 0 && high < 500) {
-      return "Nybyggnation ligger ofta över 1 Mkr. Överväg att justera spannet eller ange att det är en mindre byggnad.";
+      return {
+        text: "Nybyggnation är vanligtvis svårt att genomföra inom detta spann. Vill du justera budgeten eller fortsätta ändå?",
+        context: "nybyggnation",
+      };
     }
     if (projectType === "renovering" && high > 2000) {
-      return "Stort spann för renovering – om möjligt, preciserar du så får du mer träffsäkra offerter.";
+      return {
+        text: "Ett så stort spann för renovering är vanligtvis svårt för entreprenörer att prissätta. Vill du justera eller fortsätta ändå?",
+        context: "renovering",
+      };
     }
     return null;
   })();
@@ -189,9 +199,22 @@ export default function BudgetPage() {
           </Card>
 
           {budgetWarning && (
-            <Notice variant="warning" className="mt-6">
-              {budgetWarning}
-            </Notice>
+            <div className="mt-6 space-y-3">
+              <Notice variant="warning">
+                {budgetWarning.text}
+              </Notice>
+              <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-[#E8E3DC] bg-white px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={budgetAcknowledged}
+                  onChange={(e) => setBudgetAcknowledged(e.target.checked)}
+                  className="h-4 w-4 rounded border-[#8C7860] text-[#8C7860] focus:ring-[#8C7860]"
+                />
+                <span className="text-sm font-medium text-[#2A2520]">
+                  Jag vill fortsätta ändå
+                </span>
+              </label>
+            </div>
           )}
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

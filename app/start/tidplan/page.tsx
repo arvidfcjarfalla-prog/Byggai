@@ -45,6 +45,9 @@ export default function TidplanPage() {
   const [blockedWeeks, setBlockedWeeks] = useState<string[]>(
     data.tidplan?.blockedWeeks ?? []
   );
+  const [startWindowFlexible, setStartWindowFlexible] = useState<boolean | undefined>(
+    data.tidplan?.startWindowFlexible
+  );
 
   const projectType = data.projectType;
   const typeCrumb: Crumb | null =
@@ -89,6 +92,7 @@ export default function TidplanPage() {
         startTo: startTo || undefined,
         executionPace: executionPace as "snabb" | "normal" | "kan_vanta" | undefined,
         blockedWeeks: blockedWeeks.length ? blockedWeeks : undefined,
+        startWindowFlexible,
       },
     });
     const idx = stepConfig.findIndex((s) => s.path === "/start/sammanfattning");
@@ -171,6 +175,39 @@ export default function TidplanPage() {
                   <div className="mt-1 text-sm text-[#766B60]">{opt.desc}</div>
                 </button>
               ))}
+            </div>
+          </Card>
+
+          <Card className="mt-6">
+            <h3 className="mb-4 text-lg font-bold text-[#2A2520]">
+              Start-fönster flexibelt?
+            </h3>
+            <p className="mb-4 text-sm text-[#766B60]">
+              Kan du flytta startdatum något om det underlättar matchning mot entreprenörer?
+            </p>
+            <div className="flex gap-4">
+              <button
+                type="button"
+                onClick={() => setStartWindowFlexible(true)}
+                className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all ${
+                  startWindowFlexible === true
+                    ? "border-[#8C7860] bg-[#8C7860]/10 text-[#2A2520]"
+                    : "border-[#E8E3DC] bg-white text-[#766B60] hover:border-[#CDB49B]"
+                }`}
+              >
+                Ja, något flexibelt
+              </button>
+              <button
+                type="button"
+                onClick={() => setStartWindowFlexible(false)}
+                className={`rounded-2xl border-2 px-4 py-3 text-sm font-semibold transition-all ${
+                  startWindowFlexible === false
+                    ? "border-[#8C7860] bg-[#8C7860]/10 text-[#2A2520]"
+                    : "border-[#E8E3DC] bg-white text-[#766B60] hover:border-[#CDB49B]"
+                }`}
+              >
+                Nej, fast datum
+              </button>
             </div>
           </Card>
 
