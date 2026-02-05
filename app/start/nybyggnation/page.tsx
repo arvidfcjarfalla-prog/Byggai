@@ -29,8 +29,8 @@ export default function NybyggnationPage() {
       nybyggnation: { harTomt, detaljplan, bygglov },
     });
 
-    setCurrentStep(4);
-    router.push("/start/underlag");
+    setCurrentStep(5);
+    router.push("/start/beskrivning");
   };
 
   // Smart “risk assessment”

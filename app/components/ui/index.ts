@@ -7,3 +7,5 @@ export { Notice } from "./notice";
 export { Progress } from "./progress";
 export { Breadcrumbs } from "./breadcrumbs";
 export type { Crumb } from "./breadcrumbs";
+export { Typewriter } from "./typewriter";
+export type { TypewriterProps } from "./typewriter";

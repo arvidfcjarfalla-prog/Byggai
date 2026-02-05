@@ -23,12 +23,14 @@ const DUMMY_ENTREPRENEURS = [
 ];
 
 export default function SammanfattningPage() {
-  const { data, updateData, computeRiskProfile } = useWizard();
+  const { data, updateData, stepConfig, projectBrief } = useWizard();
   const [showAuthGate, setShowAuthGate] = useState(false);
+  const [showSaveLinkGate, setShowSaveLinkGate] = useState(false);
   const [quoteGenerated, setQuoteGenerated] = useState(!!data.quoteDraft);
   const [matchList, setMatchList] = useState<typeof DUMMY_ENTREPRENEURS | null>(null);
 
-  const risk = computeRiskProfile(data);
+  const risk = projectBrief.riskProfile;
+  const openQuestions = projectBrief.openQuestions;
   const projectType = data.projectType;
   const typeCrumb: Crumb | null =
     projectType && projectType !== "annat"
@@ -51,6 +53,7 @@ export default function SammanfattningPage() {
     { href: "/start", label: "Projekttyp" },
     { href: "/start/nulage", label: "Nuläge" },
     ...(typeCrumb ? [typeCrumb] : []),
+    { href: "/start/beskrivning", label: "Beskrivning" },
     { href: "/start/underlag", label: "Underlag" },
     { href: "/start/omfattning", label: "Omfattning" },
     { href: "/start/budget", label: "Budget" },
@@ -58,15 +61,31 @@ export default function SammanfattningPage() {
     { label: "Sammanfattning" },
   ];
 
+  const buildPayload = () => ({
+    projectType: data.projectType,
+    currentPhase: data.currentPhase,
+    freeTextDescription: data.freeTextDescription,
+    derivedSummary: data.derivedSummary,
+    omfattning: data.omfattning,
+    budget: data.budget,
+    tidplan: data.tidplan,
+    files: data.files?.map((f) => ({ name: f.name, tags: f.tags, relatesTo: f.relatesTo })),
+    riskProfile: projectBrief.riskProfile,
+  });
+
   const handleGenerateQuote = () => {
     updateData({
       quoteDraft: {
         createdAt: new Date().toISOString(),
         summary: "Offertutkast genererat från dina svar (MVP-stub).",
+        payload: buildPayload(),
       },
     });
     setQuoteGenerated(true);
   };
+
+  const [showSendAuthGate, setShowSendAuthGate] = useState(false);
+  const handleSkickaForfragan = () => setShowSendAuthGate(true);
 
   const handleMatch = () => {
     setMatchList(DUMMY_ENTREPRENEURS);
@@ -74,6 +93,10 @@ export default function SammanfattningPage() {
 
   const handleInvite = () => {
     setShowAuthGate(true);
+  };
+
+  const handleSaveLink = () => {
+    setShowSaveLinkGate(true);
   };
 
   return (
@@ -96,63 +119,176 @@ export default function SammanfattningPage() {
             <WizardProgress />
           </div>
 
-          {/* Dina val */}
+          {/* Det här skickas till entreprenör */}
+          <Card className="mt-8 border-2 border-[#8C7860]/30 bg-white">
+            <h2 className="mb-4 text-lg font-bold text-[#2A2520]">
+              Det här skickas till entreprenör
+            </h2>
+            <div className="space-y-4 text-sm">
+              <div>
+                <span className="font-semibold text-[#8C7860]">Projekttyp · Nuläge</span>
+                <p className="mt-0.5 text-[#2A2520]">
+                  {projectType === "renovering" ? "Renovering" : projectType === "tillbyggnad" ? "Tillbyggnad" : projectType === "nybyggnation" ? "Nybyggnation" : "Annat"}
+                  {data.currentPhase ? ` · ${data.currentPhase === "ide" ? "Tidig idé" : data.currentPhase === "skiss" ? "Skiss" : data.currentPhase === "ritningar" ? "Färdiga ritningar" : "Färdigt underlag"}` : ""}
+                </p>
+              </div>
+              {data.freeTextDescription && (
+                <div>
+                  <span className="font-semibold text-[#8C7860]">Fri beskrivning</span>
+                  <p className="mt-0.5 text-[#2A2520]">{data.freeTextDescription}</p>
+                </div>
+              )}
+              {data.derivedSummary && (data.derivedSummary.goal || data.derivedSummary.scope) && (
+                <div>
+                  <span className="font-semibold text-[#8C7860]">Strukturerad tolkning</span>
+                  <p className="mt-0.5 text-[#2A2520]">
+                    {[data.derivedSummary.goal, data.derivedSummary.scope].filter(Boolean).join(" — ")}
+                    {data.derivedSummary.flags?.length ? ` (flaggor: ${data.derivedSummary.flags.join(", ")})` : ""}
+                  </p>
+                </div>
+              )}
+              {data.omfattning && (
+                <div>
+                  <span className="font-semibold text-[#8C7860]">Omfattning</span>
+                  <p className="mt-0.5 text-[#2A2520]">{data.omfattning}</p>
+                </div>
+              )}
+              {(data.budget?.intervalMin != null || data.budget?.intervalMax != null) && (
+                <div>
+                  <span className="font-semibold text-[#8C7860]">Budget</span>
+                  <p className="mt-0.5 text-[#2A2520]">
+                    {data.budget.intervalMin ?? "?"} – {data.budget.intervalMax ?? "?"} tkr
+                    {data.budget.isHard ? " (hård)" : " (flexibel)"}
+                  </p>
+                </div>
+              )}
+              {(data.tidplan?.startFrom || data.tidplan?.startTo) && (
+                <div>
+                  <span className="font-semibold text-[#8C7860]">Tidplan</span>
+                  <p className="mt-0.5 text-[#2A2520]">
+                    Start {data.tidplan.startFrom ?? "—"}–{data.tidplan.startTo ?? "—"}
+                    {data.tidplan.executionPace ? ` · ${data.tidplan.executionPace}` : ""}
+                    {data.tidplan.blockedWeeks?.length ? ` · ${data.tidplan.blockedWeeks.length} blockerade veckor` : ""}
+                  </p>
+                </div>
+              )}
+              {(data.files?.length ?? 0) > 0 && (
+                <div>
+                  <span className="font-semibold text-[#8C7860]">Filer</span>
+                  <ul className="mt-1 space-y-0.5 text-[#2A2520]">
+                    {data.files!.map((f) => (
+                      <li key={f.id}>
+                        {f.name} {f.tags.length ? `[${f.tags.join(", ")}]` : ""} {f.relatesTo ? `→ ${f.relatesTo}` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div>
+                <span className="font-semibold text-[#8C7860]">Riskprofil</span>
+                <p className="mt-0.5 text-[#2A2520]">{risk.reasons.join(" ")}</p>
+                {risk.recommendedNextSteps.length > 0 && (
+                  <p className="mt-1 text-[#766B60]">Rekommenderat: {risk.recommendedNextSteps.join("; ")}</p>
+                )}
+              </div>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {!quoteGenerated ? (
+                <button
+                  type="button"
+                  onClick={handleGenerateQuote}
+                  className="rounded-2xl bg-[#8C7860] px-6 py-3 text-sm font-semibold text-white shadow-md outline-none transition-all hover:bg-[#6B5A47] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
+                >
+                  Generera offertunderlag
+                </button>
+              ) : (
+                <Notice variant="success" className="inline-block">
+                  Offertutkast skapat (sparat lokalt).
+                </Notice>
+              )}
+              <button
+                type="button"
+                onClick={handleSkickaForfragan}
+                className="rounded-2xl border-2 border-[#8C7860] bg-white px-6 py-3 text-sm font-semibold text-[#8C7860] outline-none transition-all hover:bg-[#8C7860]/10 focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
+              >
+                Skicka förfrågan
+              </button>
+            </div>
+            {showSendAuthGate && (
+              <div className="mt-4 rounded-2xl border-2 border-[#8C7860]/40 bg-[#CDB49B]/10 p-4">
+                <p className="mb-3 text-sm font-medium text-[#2A2520]">
+                  För att skicka behöver du konto (för att logga beslut och spåra svar).
+                </p>
+                <div className="flex flex-wrap gap-3">
+                  <Link href="/konto" className="rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]">
+                    Skapa konto
+                  </Link>
+                  <Link href="/login" className="rounded-xl border-2 border-[#E8E3DC] bg-white px-4 py-2 text-sm font-semibold text-[#766B60] hover:border-[#CDB49B]">
+                    Logga in
+                  </Link>
+                  <button type="button" onClick={() => setShowSendAuthGate(false)} className="text-sm font-semibold text-[#766B60] underline-offset-2 hover:underline">
+                    Stäng
+                  </button>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          {/* Dina val + Redigera-länkar */}
           <Card className="mt-8">
             <h2 className="mb-4 text-lg font-bold text-[#2A2520]">
               Dina val
             </h2>
             <dl className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-xs font-semibold uppercase text-[#8C7860]">Projekttyp</dt>
-                <dd className="mt-0.5 text-[#2A2520]">
-                  {projectType === "renovering"
-                    ? "Renovering"
-                    : projectType === "tillbyggnad"
-                      ? "Tillbyggnad"
-                      : projectType === "nybyggnation"
-                        ? "Nybyggnation"
-                        : "Annat"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-semibold uppercase text-[#8C7860]">Nuläge</dt>
-                <dd className="mt-0.5 text-[#2A2520]">
-                  {data.currentPhase === "ide"
-                    ? "Tidig idé"
-                    : data.currentPhase === "skiss"
-                      ? "Skiss"
-                      : data.currentPhase === "ritningar"
-                        ? "Färdiga ritningar"
-                        : data.currentPhase === "fardigt"
-                          ? "Färdigt underlag"
-                          : "—"}
-                </dd>
-              </div>
-              {data.budget && (data.budget.intervalMin != null || data.budget.intervalMax != null) && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase text-[#8C7860]">Budget</dt>
-                  <dd className="mt-0.5 text-[#2A2520]">
-                    {data.budget.intervalMin ?? "?"} – {data.budget.intervalMax ?? "?"} tkr
-                    {data.budget.isHard ? " (hård)" : " (flex)"}
-                  </dd>
-                </div>
-              )}
-              {data.tidplan && (data.tidplan.startFrom || data.tidplan.startTo) && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase text-[#8C7860]">Startintervall</dt>
-                  <dd className="mt-0.5 text-[#2A2520]">
-                    {data.tidplan.startFrom ?? "—"} till {data.tidplan.startTo ?? "—"}
-                  </dd>
-                </div>
-              )}
-              {(data.files?.length ?? 0) > 0 && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase text-[#8C7860]">Filer</dt>
-                  <dd className="mt-0.5 text-[#2A2520]">{data.files!.length} uppladdade</dd>
-                </div>
-              )}
+              {stepConfig.map((step, idx) => {
+                const path = step.path;
+                const isCurrent = path === "/start/sammanfattning";
+                if (isCurrent) return null;
+                const label = step.label;
+                let value: string | undefined;
+                if (path === "/start") value = projectType === "renovering" ? "Renovering" : projectType === "tillbyggnad" ? "Tillbyggnad" : projectType === "nybyggnation" ? "Nybyggnation" : "Annat";
+                else if (path === "/start/nulage") value = data.currentPhase === "ide" ? "Tidig idé" : data.currentPhase === "skiss" ? "Skiss" : data.currentPhase === "ritningar" ? "Färdiga ritningar" : data.currentPhase === "fardigt" ? "Färdigt underlag" : undefined;
+                else if (path === "/start/budget" && data.budget) value = (data.budget.intervalMin != null || data.budget.intervalMax != null) ? `${data.budget.intervalMin ?? "?"} – ${data.budget.intervalMax ?? "?"} tkr` : undefined;
+                else if (path === "/start/tidplan" && data.tidplan) value = (data.tidplan.startFrom || data.tidplan.startTo) ? `${data.tidplan.startFrom ?? "—"} till ${data.tidplan.startTo ?? "—"}` : undefined;
+                else if (path === "/start/beskrivning") value = data.freeTextDescription ? `${data.freeTextDescription.slice(0, 40)}…` : undefined;
+                else if (path === "/start/underlag") value = (data.files?.length ?? 0) > 0 ? `${data.files!.length} filer` : undefined;
+                else if (path === "/start/omfattning") value = data.omfattning ?? undefined;
+                else if (path === "/start/renovering" || path === "/start/tillbyggnad" || path === "/start/nybyggnation") value = "—";
+                if (value === undefined && path !== "/start/renovering" && path !== "/start/tillbyggnad" && path !== "/start/nybyggnation") value = "—";
+                return (
+                  <div key={path} className="flex items-start justify-between gap-2">
+                    <div>
+                      <dt className="text-xs font-semibold uppercase text-[#8C7860]">{label}</dt>
+                      <dd className="mt-0.5 text-[#2A2520]">{value ?? "—"}</dd>
+                    </div>
+                    <Link
+                      href={path}
+                      className="shrink-0 text-sm font-semibold text-[#8C7860] underline-offset-2 hover:underline"
+                    >
+                      Redigera
+                    </Link>
+                  </div>
+                );
+              })}
             </dl>
           </Card>
+
+          {/* Saker som behöver beslutas (openQuestions) */}
+          {openQuestions.length > 0 && (
+            <Card className="mt-6 border-2 border-[#CDB49B]/40 bg-[#CDB49B]/5">
+              <h2 className="mb-2 text-lg font-bold text-[#2A2520]">
+                Saker som behöver beslutas
+              </h2>
+              <p className="mb-4 text-sm text-[#766B60]">
+                Baserat på dina svar finns några frågor kvar som påverkar offerter och planering.
+              </p>
+              <ul className="list-inside list-disc space-y-1 text-sm text-[#2A2520]">
+                {openQuestions.map((q, i) => (
+                  <li key={i}>{q}</li>
+                ))}
+              </ul>
+            </Card>
+          )}
 
           {/* Riskkort */}
           <Card className={`mt-6 border-2 ${RISK_COLORS[risk.level]}`}>
@@ -177,29 +313,8 @@ export default function SammanfattningPage() {
             </div>
           </Card>
 
-          {/* Offert & Matchning */}
-          <div className="mt-8 grid gap-6 sm:grid-cols-2">
-            <Card>
-              <h3 className="mb-2 text-base font-bold text-[#2A2520]">
-                Generera offertunderlag
-              </h3>
-              <p className="mb-4 text-sm text-[#766B60]">
-                Skapa ett utkast som du kan dela med entreprenörer (MVP: sparas i översikten).
-              </p>
-              {quoteGenerated ? (
-                <Notice variant="success">
-                  Offertutkast skapat. Du kan senare exportera eller dela det när du har konto.
-                </Notice>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleGenerateQuote}
-                  className="rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-6 py-3 text-sm font-semibold text-white shadow-md outline-none transition-all hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
-                >
-                  Generera utkast
-                </button>
-              )}
-            </Card>
+          {/* Matchning */}
+          <div className="mt-8">
             <Card>
               <h3 className="mb-2 text-base font-bold text-[#2A2520]">
                 Matcha entreprenörer
@@ -246,24 +361,25 @@ export default function SammanfattningPage() {
             </Card>
           )}
 
-          {/* Bjud in / Collaboration */}
+          {/* Bjud in / Spara & dela */}
           <Card className="mt-8">
             <h3 className="mb-2 text-base font-bold text-[#2A2520]">
-              Bjud in någon
+              Bjud in eller spara
             </h3>
             <p className="mb-4 text-sm text-[#766B60]">
-              Dela projektet med partner, arkitekt eller entreprenör. För delning krävs konto.
+              Dela projektet med partner, arkitekt eller entreprenör, eller spara och dela en länk. För delning och sparande krävs konto.
             </p>
-            {showAuthGate ? (
+            <div className="flex flex-wrap gap-3">
+            {(showAuthGate || showSaveLinkGate) ? (
               <div className="rounded-2xl border-2 border-[#8C7860]/40 bg-[#CDB49B]/10 p-6">
                 <h4 className="mb-2 font-semibold text-[#2A2520]">
-                  Konto krävs för delning
+                  Konto krävs för att spara och dela
                 </h4>
                 <p className="mb-4 text-sm text-[#766B60]">
-                  För att bjuda in andra och dela projektet behöver du skapa konto eller logga in.
-                  Det säkerställer att endast du bestämmer vilka som får åtkomst.
+                  För att bjuda in andra, spara projektet eller dela en länk behöver du skapa konto eller logga in.
+                  Det säkerställer att endast du bestämmer vilka som får åtkomst och att dina uppgifter sparas säkert.
                 </p>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <Link
                     href="/konto"
                     className="rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white outline-none transition-all hover:bg-[#6B5A47] focus-visible:ring-2 focus-visible:ring-[#8C7860]"
@@ -276,9 +392,17 @@ export default function SammanfattningPage() {
                   >
                     Logga in
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAuthGate(false); setShowSaveLinkGate(false); }}
+                    className="text-sm font-semibold text-[#766B60] underline-offset-2 hover:underline"
+                  >
+                    Fortsätt utan att spara
+                  </button>
                 </div>
               </div>
             ) : (
+              <>
               <button
                 type="button"
                 onClick={handleInvite}
@@ -286,7 +410,16 @@ export default function SammanfattningPage() {
               >
                 Bjud in deltagare
               </button>
+              <button
+                type="button"
+                onClick={handleSaveLink}
+                className="rounded-2xl border-2 border-[#CDB49B] bg-white px-6 py-3 text-sm font-semibold text-[#8C7860] outline-none transition-all hover:bg-[#CDB49B]/10 focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
+              >
+                Spara & dela länk
+              </button>
+              </>
             )}
+            </div>
           </Card>
 
           <div className="mt-10 flex flex-wrap items-center justify-between gap-4">

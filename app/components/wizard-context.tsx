@@ -41,7 +41,9 @@ export interface NybyggnationData {
   bygglov?: string;
 }
 
-export type FileTag = "ritning" | "foto" | "bygghandling" | "ovrigt";
+export type FileTag = "ritning" | "foto" | "bygghandling" | "detaljplan" | "ovrigt";
+
+export type RelatesTo = "kök" | "badrum" | "fasad" | "mark" | "tak" | "el" | "vvs" | "övrigt";
 
 export interface FileDoc {
   id: string;
@@ -49,6 +51,7 @@ export interface FileDoc {
   type: string;
   size: number;
   tags: FileTag[];
+  relatesTo?: RelatesTo;
 }
 
 export interface BudgetData {
@@ -56,6 +59,8 @@ export interface BudgetData {
   intervalMax?: number;
   isHard?: boolean;
   financing?: "egen" | "bank" | "osaker";
+  /** User chose to continue despite budget warning */
+  budgetAcknowledged?: boolean;
 }
 
 export interface TidplanData {
@@ -63,6 +68,8 @@ export interface TidplanData {
   startTo?: string;
   executionPace?: "snabb" | "normal" | "kan_vanta";
   blockedWeeks?: string[]; // e.g. ["2026-W10", "2026-W11"]
+  /** Start window is flexible for matching */
+  startWindowFlexible?: boolean;
 }
 
 export type RiskLevel = "green" | "yellow" | "red";
@@ -73,17 +80,39 @@ export interface RiskProfile {
   recommendedNextSteps: string[];
 }
 
+/** AI/entreprenör-vänlig sammanfattning, deriverad från wizard state */
+export interface ProjectBrief {
+  shortSummary: string;
+  scopeBullets: string[];
+  assumptions: string[];
+  openQuestions: string[];
+  riskProfile: RiskProfile;
+}
+
 export interface Collaborator {
   email: string;
   role: "owner" | "read" | "edit";
 }
 
+/** Heuristic-derived summary from free text (no AI). */
+export interface DerivedSummary {
+  goal?: string;
+  scope?: string;
+  flags?: string[];
+  extractedRooms?: string[];
+}
+
+export type UserRole = "privat" | "brf" | "entreprenor" | "osaker";
+
 export interface WizardData {
+  userRole?: UserRole;
   projectType: ProjectType;
   currentPhase: CurrentPhase;
   renovering?: RenoveringRooms;
   tillbyggnad?: TillbyggnadData;
   nybyggnation?: NybyggnationData;
+  freeTextDescription?: string;
+  derivedSummary?: DerivedSummary;
   omfattning?: string;
   omfattningScope?: Record<string, boolean | string>; // type-specific scope answers
   budget?: BudgetData;
@@ -92,7 +121,7 @@ export interface WizardData {
   files?: FileDoc[];
   riskProfile?: RiskProfile;
   collaborators?: Collaborator[];
-  quoteDraft?: { createdAt: string; summary?: string };
+  quoteDraft?: { createdAt: string; summary?: string; payload?: unknown };
   decisionLog?: Array<{ at: string; what: string }>;
 }
 
@@ -105,15 +134,20 @@ interface WizardContextType {
   totalSteps: number;
   stepConfig: { label: string; path: string }[];
   calculateProgress: () => number;
+  projectBrief: ProjectBrief;
   addFile: (file: FileDoc) => void;
   removeFile: (id: string) => void;
   updateFileTags: (id: string, tags: FileTag[]) => void;
+  updateFileRelatesTo: (id: string, relatesTo: RelatesTo | undefined) => void;
+  setRole: (role: UserRole) => void;
+  deriveSummaryFromText: (text: string, projectType: ProjectType) => DerivedSummary;
   computeRiskProfile: (data: WizardData) => RiskProfile;
 }
 
 const WizardContext = createContext<WizardContextType | undefined>(undefined);
 
 const STORAGE_KEY = "byggplattformen-wizard";
+const ROLE_STORAGE_KEY = "byggplattformen-role";
 
 const initialData: WizardData = {
   projectType: null,
@@ -140,7 +174,11 @@ function getStepConfig(projectType: ProjectType): { label: string; path: string 
     base.push({ label: "Tillbyggnad", path: "/start/tillbyggnad" });
   } else if (projectType === "nybyggnation") {
     base.push({ label: "Nybyggnation", path: "/start/nybyggnation" });
-  } else if (projectType === "annat") {
+  }
+  if (projectType) {
+    base.push({ label: "Beskrivning", path: "/start/beskrivning" });
+  }
+  if (projectType === "annat") {
     base.push(
       { label: "Underlag", path: "/start/underlag" },
       { label: "Omfattning", path: "/start/omfattning" },
@@ -148,8 +186,7 @@ function getStepConfig(projectType: ProjectType): { label: string; path: string 
       { label: "Tidplan", path: "/start/tidplan" },
       { label: "Sammanfattning", path: "/start/sammanfattning" }
     );
-  }
-  if (projectType && projectType !== "annat") {
+  } else if (projectType) {
     base.push(
       { label: "Underlag", path: "/start/underlag" },
       { label: "Omfattning", path: "/start/omfattning" },
@@ -159,6 +196,39 @@ function getStepConfig(projectType: ProjectType): { label: string; path: string 
     );
   }
   return base;
+}
+
+/** Heuristic derivation from free text (no API). */
+export function deriveSummaryFromText(
+  text: string,
+  _projectType: ProjectType
+): DerivedSummary {
+  const t = text.toLowerCase();
+  const flags: string[] = [];
+  const riskWords = [
+    "badrum",
+    "bärande vägg",
+    "bärande",
+    "fukt",
+    "el",
+    "vvs",
+    "asbest",
+    "tak",
+    "grund",
+  ];
+  riskWords.forEach((w) => {
+    if (t.includes(w)) flags.push(w);
+  });
+  const rooms: string[] = [];
+  ["kök", "badrum", "vardagsrum", "sovrum", "hall", "tvättrum", "kontor"].forEach(
+    (r) => {
+      if (t.includes(r)) rooms.push(r);
+    }
+  );
+  const sentences = text.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
+  const goal = sentences[0]?.slice(0, 120) || undefined;
+  const scope = sentences.length > 1 ? sentences.slice(1).join(". ").slice(0, 200) : undefined;
+  return { goal, scope, flags: flags.length ? flags : undefined, extractedRooms: rooms.length ? rooms : undefined };
 }
 
 /** Compute risk profile from wizard data (transparent, neutral). */
@@ -225,6 +295,85 @@ export function computeRiskProfile(data: WizardData): RiskProfile {
   return { level: "yellow", reasons, recommendedNextSteps };
 }
 
+/** Derive ProjectBrief from wizard data for AI/entreprenör. */
+export function getProjectBrief(data: WizardData): ProjectBrief {
+  const riskProfile = computeRiskProfile(data);
+  const scopeBullets: string[] = [];
+  const assumptions: string[] = [];
+  const openQuestions: string[] = [];
+
+  if (data.projectType) {
+    scopeBullets.push(`Projekttyp: ${data.projectType}`);
+  }
+  if (data.currentPhase) {
+    scopeBullets.push(`Nuläge: ${data.currentPhase}`);
+  }
+
+  if (data.projectType === "renovering" && data.renovering) {
+    const rooms = Object.entries(data.renovering)
+      .filter(([, v]) => v === true)
+      .map(([k]) => k);
+    if (rooms.length) scopeBullets.push(`Rum: ${rooms.join(", ")}`);
+  }
+  if (data.projectType === "tillbyggnad" && data.tillbyggnad?.storlek) {
+    scopeBullets.push(`Tillbyggnad storlek: ${data.tillbyggnad.storlek}`);
+    if (data.tillbyggnad.typ) scopeBullets.push(`Typ: ${data.tillbyggnad.typ}`);
+  }
+  if (data.projectType === "nybyggnation" && data.nybyggnation) {
+    if (data.nybyggnation.harTomt !== undefined) {
+      scopeBullets.push(data.nybyggnation.harTomt ? "Tomt: ja" : "Tomt: nej");
+    }
+    if (data.nybyggnation.detaljplan) scopeBullets.push(`Detaljplan: ${data.nybyggnation.detaljplan}`);
+    if (data.nybyggnation.bygglov) scopeBullets.push(`Bygglov: ${data.nybyggnation.bygglov}`);
+  }
+
+  if (data.omfattning) scopeBullets.push(`Omfattning: ${data.omfattning}`);
+
+  if (data.budget?.intervalMin !== undefined || data.budget?.intervalMax !== undefined) {
+    const min = data.budget.intervalMin ?? "?";
+    const max = data.budget.intervalMax ?? "?";
+    scopeBullets.push(`Budget (tkr): ${min}–${max}`);
+    if (data.budget.budgetAcknowledged) {
+      assumptions.push("Användaren vill fortsätta trots budgetvarning.");
+    }
+  }
+  if (data.tidplan?.startFrom || data.tidplan?.startTo) {
+    scopeBullets.push(`Start: ${data.tidplan.startFrom ?? "?"}–${data.tidplan.startTo ?? "?"}`);
+    if (data.tidplan.startWindowFlexible !== undefined) {
+      assumptions.push(`Start-fönster flexibelt: ${data.tidplan.startWindowFlexible ? "ja" : "nej"}`);
+    }
+  }
+  if (data.tidplan?.executionPace) {
+    scopeBullets.push(`Tempo: ${data.tidplan.executionPace}`);
+  }
+
+  if (!data.projectType) openQuestions.push("Vilken typ av projekt (renovering/tillbyggnad/nybyggnation/annat)?");
+  if (!data.currentPhase) openQuestions.push("Vilket nuläge har projektet (idé/skiss/ritningar/färdigt)?");
+  if (data.projectType === "renovering" && !data.renovering) openQuestions.push("Vilka rum berörs?");
+  if (data.projectType === "tillbyggnad" && !data.tillbyggnad?.storlek) openQuestions.push("Ungefärlig storlek på tillbyggnaden?");
+  if (data.projectType === "nybyggnation" && data.nybyggnation?.harTomt === undefined) openQuestions.push("Har du tomt och eventuellt detaljplan/bygglov?");
+  if (!data.omfattning) openQuestions.push("Kort beskrivning av omfattning.");
+  if (data.budget?.intervalMin === undefined && data.budget?.intervalMax === undefined) openQuestions.push("Budgetspann (min–max)?");
+  if (!data.tidplan?.startFrom && !data.tidplan?.startTo) openQuestions.push("Önskat startfönster?");
+
+  const parts: string[] = [];
+  if (data.projectType) parts.push(data.projectType);
+  if (data.currentPhase) parts.push(`nuläge ${data.currentPhase}`);
+  if (data.omfattning) parts.push(data.omfattning);
+  const shortSummary =
+    parts.length > 0
+      ? `Projekt: ${parts.join(", ")}. ${scopeBullets.length ? "Scope: " + scopeBullets.slice(0, 3).join("; ") + "." : ""}`
+      : "Ingen projektinfo ifylld än.";
+
+  return {
+    shortSummary,
+    scopeBullets,
+    assumptions,
+    openQuestions,
+    riskProfile,
+  };
+}
+
 export function WizardProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<WizardData>(initialData);
   const [currentStep, setCurrentStep] = useState(1);
@@ -244,14 +393,22 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
     if (!parsed || typeof parsed !== "object") return;
 
     const restored = parsed as WizardData;
-    setData({ ...initialData, ...restored });
+    let role = restored.userRole;
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem(ROLE_STORAGE_KEY);
+      if (stored && ["privat", "brf", "entreprenor", "osaker"].includes(stored)) {
+        role = stored as UserRole;
+      }
+    }
+    setData({ ...initialData, ...restored, userRole: role ?? restored.userRole });
 
     const config = getStepConfig(restored.projectType);
     let step = 1;
     if (restored.projectType) step = 2;
     if (restored.currentPhase) step = 3;
     if (restored.renovering || restored.tillbyggnad || restored.nybyggnation) step = 4;
-    if (restored.files !== undefined) step = Math.max(step, 5);
+    if (restored.freeTextDescription) step = Math.max(step, 4);
+    if (restored.files !== undefined && (restored.files?.length ?? 0) > 0) step = Math.max(step, 5);
     if (restored.omfattning) step = Math.max(step, 6);
     if (restored.budget?.intervalMin !== undefined) step = Math.max(step, 7);
     if (restored.tidplan?.startFrom) step = Math.max(step, 8);
@@ -320,6 +477,22 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  const updateFileRelatesTo = useCallback((id: string, relatesTo: RelatesTo | undefined) => {
+    setData((prev) => ({
+      ...prev,
+      files: (prev.files ?? []).map((f) =>
+        f.id === id ? { ...f, relatesTo } : f
+      ),
+    }));
+  }, []);
+
+  const setRole = useCallback((role: UserRole) => {
+    setData((prev) => ({ ...prev, userRole: role }));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(ROLE_STORAGE_KEY, role);
+    }
+  }, []);
+
   const calculateProgress = useCallback(() => {
     let completed = 0;
     if (data.projectType) completed++;
@@ -336,6 +509,12 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
   }, [data, totalSteps]);
 
   const computeRiskProfileCb = useCallback((d: WizardData) => computeRiskProfile(d), []);
+  const deriveSummaryFromTextCb = useCallback(
+    (text: string, projectType: ProjectType) => deriveSummaryFromText(text, projectType),
+    []
+  );
+
+  const projectBrief = useMemo(() => getProjectBrief(data), [data]);
 
   const value: WizardContextType = useMemo(
     () => ({
@@ -347,9 +526,13 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
       totalSteps,
       stepConfig,
       calculateProgress,
+      projectBrief,
       addFile,
       removeFile,
       updateFileTags,
+      updateFileRelatesTo,
+      setRole,
+      deriveSummaryFromText: deriveSummaryFromTextCb,
       computeRiskProfile: computeRiskProfileCb,
     }),
     [
@@ -361,9 +544,13 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
       totalSteps,
       stepConfig,
       calculateProgress,
+      projectBrief,
       addFile,
       removeFile,
       updateFileTags,
+      updateFileRelatesTo,
+      setRole,
+      deriveSummaryFromTextCb,
       computeRiskProfileCb,
     ]
   );
