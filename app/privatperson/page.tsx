@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-export default function EntreprenorPage() {
+export default function PrivatpersonPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -76,16 +76,16 @@ export default function EntreprenorPage() {
             className="hidden items-center gap-8 md:flex"
           >
             <a
-              href="#fordelar"
-              className="relative text-sm font-medium text-[#766B60] outline-none transition-colors duration-300 hover:text-[#8C7860] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 after:absolute after:-bottom-1 after:left-0 after:h-0.5 after:w-0 after:bg-[#8C7860] after:transition-all after:duration-300 hover:after:w-full"
-            >
-              Fördelar
-            </a>
-            <a
               href="#hur"
               className="relative text-sm font-medium text-[#766B60] outline-none transition-colors duration-300 hover:text-[#8C7860] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 after:absolute after:-bottom-1 after:left-0 after:h-0.5 after:w-0 after:bg-[#8C7860] after:transition-all after:duration-300 hover:after:w-full"
             >
               Så funkar det
+            </a>
+            <a
+              href="#varfor"
+              className="relative text-sm font-medium text-[#766B60] outline-none transition-colors duration-300 hover:text-[#8C7860] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 after:absolute after:-bottom-1 after:left-0 after:h-0.5 after:w-0 after:bg-[#8C7860] after:transition-all after:duration-300 hover:after:w-full"
+            >
+              Varför detta
             </a>
             <a
               href="#faq"
@@ -172,10 +172,9 @@ export default function EntreprenorPage() {
               className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-6 text-sm"
             >
               {[
-                { href: "/start", label: "Ta emot projekt" },
+                { href: "/start", label: "Initiera projekt" },
                 { href: "/konto", label: "Skapa konto" },
                 { href: "/", label: "Byt roll" },
-                { href: "#fordelar", label: "Fördelar" },
                 { href: "#hur", label: "Så funkar det" },
                 { href: "#faq", label: "FAQ" },
               ].map((item, i) => (
@@ -204,21 +203,23 @@ export default function EntreprenorPage() {
             <div className="relative rounded-3xl border-2 border-[#E8E3DC] bg-white/95 p-8 shadow-2xl backdrop-blur-sm hover-lift md:p-12 lg:rounded-[2.5rem]">
               <div className="inline-flex items-center gap-2 rounded-full border border-[#CDB49B] bg-gradient-to-r from-[#CDB49B]/20 to-[#CDB49B]/5 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#8C7860] opacity-0 animate-fade-in-up">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#8C7860]" />
-                För Entreprenörer
+                Beslutsstöd · Tidigt skede
               </div>
 
               <h1 className="font-display mt-8 text-4xl font-bold leading-tight tracking-tight text-[#2A2520] opacity-0 animate-fade-in-up delay-100 md:text-5xl lg:text-6xl">
-                Ta emot{" "}
+                Initiera ditt
+                <br />
                 <span className="relative inline-block">
-                  <span className="relative z-10">strukturerade</span>
+                  <span className="relative z-10">byggprojekt</span>
                   <span className="absolute bottom-2 left-0 h-3 w-full bg-[#CDB49B]/30 -rotate-1" />
                 </span>
-                <br />
-                projektförfrågningar.
+                .
               </h1>
 
               <p className="mt-6 text-lg leading-relaxed text-[#766B60] opacity-0 animate-fade-in-up delay-200 md:text-xl">
-                Få projektförfrågningar med tydligt underlag, avgränsat scope och realistiska förväntningar. Fokusera på att ge bra offerter istället för att jaga information.
+                Svara på några frågor om nuläge och mål. Plattformen skapar en
+                första projektöversikt och föreslår nästa steg — strukturerat och
+                transparent.
               </p>
 
               <div className="mt-10 flex flex-col gap-4 opacity-0 animate-fade-in-up delay-300 sm:flex-row sm:items-center">
@@ -226,7 +227,7 @@ export default function EntreprenorPage() {
                   href="/start"
                   className="group inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 sm:flex-none"
                 >
-                  Kom igång
+                  Initiera projekt
                   <svg
                     className="transition-transform duration-300 group-hover:translate-x-1"
                     width="16"
@@ -265,46 +266,29 @@ export default function EntreprenorPage() {
                   <circle cx="8" cy="8" r="6" />
                   <path d="M8 5v3l2 2" />
                 </svg>
-                Neutral plattform utan provision. Du bestämmer själv.
+                Ingen inloggning i första steget. Du kan avbryta när som helst.
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Benefits */}
-      <section id="fordelar" aria-label="Fördelar" className="scroll-mt-28 px-6 py-12">
+      {/* Trust Strip */}
+      <section aria-label="Nyckelfördelar" className="px-6 py-12">
         <div className="mx-auto max-w-7xl">
-          <div className="mb-14 text-center">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-[#2A2520] md:text-4xl lg:text-5xl">
-              Varför Byggplattformen?
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-[#766B60]">
-              Mindre tid på administration, mer tid på kvalitetsarbete.
-            </p>
-          </div>
-
           <div className="grid gap-6 md:grid-cols-3">
             {[
-              {
-                title: "Strukturerat underlag",
-                desc: "Projekten kommer med tydligt scope, underlag och förväntningar. Inga gissningar.",
-              },
-              {
-                title: "Transparent matchning",
-                desc: "Neutral logik baserad på kompetens, kapacitet och geografi. Ingen favorisering.",
-              },
-              {
-                title: "Effektiv offertprocess",
-                desc: "Mindre fram-och-tillbaka. Fokusera på att ge bra pris och kvalitet.",
-              },
+              { title: "Strukturerat underlag", desc: "Samlar rätt info i rätt ordning – även utan ritningar." },
+              { title: "Sparar tid senare", desc: "Mindre fram-och-tillbaka när du väl går vidare." },
+              { title: "Transparens", desc: "Neutral logik, tydliga antaganden och spårbarhet." }
             ].map((item, idx) => (
-              <div
-                key={idx}
-                className="group rounded-3xl border border-[#E8E3DC] bg-white p-8 shadow-lg transition-all duration-300 hover:border-[#CDB49B] hover:shadow-xl hover-lift"
-              >
-                <h3 className="mb-3 text-lg font-bold text-[#2A2520]">{item.title}</h3>
-                <p className="text-sm leading-relaxed text-[#766B60]">{item.desc}</p>
+              <div key={idx} className="group rounded-3xl border border-[#E8E3DC] bg-white p-8 shadow-lg transition-all duration-300 hover:border-[#CDB49B] hover:shadow-xl hover-lift">
+                <h3 className="mb-3 text-lg font-bold text-[#2A2520]">
+                  {item.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-[#766B60]">
+                  {item.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -312,7 +296,11 @@ export default function EntreprenorPage() {
       </section>
 
       {/* How it works */}
-      <section id="hur" aria-labelledby="hur-title" className="scroll-mt-28 px-6 py-20">
+      <section
+        id="hur"
+        aria-labelledby="hur-title"
+        className="scroll-mt-28 px-6 py-20"
+      >
         <div className="mx-auto max-w-7xl">
           <div className="mb-14 text-center">
             <h2
@@ -322,7 +310,8 @@ export default function EntreprenorPage() {
               Så funkar det
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-[#766B60]">
-              Tre enkla steg till strukturerade projektförfrågningar.
+              Du beskriver nuläget. Plattformen skapar struktur och visar vilket
+              beslut som bör tas härnäst.
             </p>
           </div>
 
@@ -330,18 +319,18 @@ export default function EntreprenorPage() {
             {[
               {
                 n: 1,
-                title: "Skapa profil",
-                desc: "Berätta om din kompetens, kapacitet och geografiska område.",
+                title: "Nuläge & underlag",
+                desc: "Välj var du är i skedet: idé, skiss eller ritningar.",
               },
               {
                 n: 2,
-                title: "Få matchade projekt",
-                desc: "Relevant förfrågningar baserat på din profil och tillgänglighet.",
+                title: "Avgränsa projektet",
+                desc: "Omfattning, mål och osäkerheter – tydligt och spårbart.",
               },
               {
                 n: 3,
-                title: "Granska & offerera",
-                desc: "Få tillgång till komplett projektunderlag och ge din offert.",
+                title: "Få en översikt",
+                desc: "Sammanfattning + rekommenderad ordning för nästa steg.",
               },
             ].map((s) => (
               <li key={s.n} className="group relative">
@@ -353,8 +342,12 @@ export default function EntreprenorPage() {
                     </div>
                     <div className="h-px flex-1 bg-gradient-to-r from-[#CDB49B] to-transparent" />
                   </div>
-                  <h3 className="mb-3 text-xl font-bold text-[#2A2520]">{s.title}</h3>
-                  <p className="leading-relaxed text-[#766B60]">{s.desc}</p>
+                  <h3 className="mb-3 text-xl font-bold text-[#2A2520]">
+                    {s.title}
+                  </h3>
+                  <p className="leading-relaxed text-[#766B60]">
+                    {s.desc}
+                  </p>
                 </div>
               </li>
             ))}
@@ -365,7 +358,7 @@ export default function EntreprenorPage() {
               href="/start"
               className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
             >
-              Skapa profil
+              Skapa projektöversikt
               <svg
                 className="transition-transform duration-300 group-hover:translate-x-1"
                 width="16"
@@ -386,7 +379,11 @@ export default function EntreprenorPage() {
       </section>
 
       {/* FAQ */}
-      <section id="faq" aria-labelledby="faq-title" className="scroll-mt-28 px-6 py-20">
+      <section
+        id="faq"
+        aria-labelledby="faq-title"
+        className="scroll-mt-28 px-6 py-20"
+      >
         <div className="mx-auto max-w-4xl">
           <div className="mb-14 text-center">
             <h2
@@ -400,16 +397,16 @@ export default function EntreprenorPage() {
           <ul className="space-y-4">
             {[
               {
-                q: "Kostar det något att använda plattformen?",
-                a: "Nej, plattformen är neutral och tar ingen provision. Du bestämmer själv dina priser och villkor.",
+                q: "Är det här en offerttjänst?",
+                a: "Nej. Det här är ett beslutsstöd i tidiga skeden. Målet är att minska felbeslut och skapa bättre underlag innan man tar in offerter.",
               },
               {
-                q: "Hur fungerar matchningen?",
-                a: "Transparent logik baserad på kompetens, kapacitet, geografi och historik. Ingen favorisering eller dolda algoritmer.",
+                q: "Måste jag ha ritningar?",
+                a: "Nej. Du kan börja med idé/skiss. Plattformen visar vad som saknas och vad som är rimligt som nästa steg.",
               },
               {
-                q: "Kan jag välja vilka projekt jag vill offerera på?",
-                a: "Ja, du får förfrågningar baserat på din profil men bestämmer alltid själv om du vill ge offert eller inte.",
+                q: "Ger ni bindande besked om bygglov?",
+                a: "Nej. Plattformen ger struktur och vägledning och visar vad som bör kontrolleras. Kommunen fattar beslut.",
               },
             ].map((item) => (
               <li key={item.q}>
@@ -435,7 +432,9 @@ export default function EntreprenorPage() {
                       </svg>
                     </span>
                   </summary>
-                  <p className="mt-4 leading-relaxed text-[#766B60]">{item.a}</p>
+                  <p className="mt-4 leading-relaxed text-[#766B60]">
+                    {item.a}
+                  </p>
                 </details>
               </li>
             ))}
@@ -449,7 +448,6 @@ export default function EntreprenorPage() {
           <div className="flex flex-col gap-6 text-sm text-[#766B60] md:flex-row md:items-center md:justify-between">
             <div>© 2026 Byggplattformen · Alla rättigheter förbehållna</div>
             <div className="flex gap-6">
-              <a href="#fordelar" className="hover:text-[#8C7860]">Fördelar</a>
               <a href="#hur" className="hover:text-[#8C7860]">Så funkar det</a>
               <a href="#faq" className="hover:text-[#8C7860]">FAQ</a>
               <Link href="/start" className="hover:text-[#8C7860]">Kom igång</Link>

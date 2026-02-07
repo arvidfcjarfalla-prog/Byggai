@@ -32,7 +32,11 @@ export function Typewriter({
   const [skipped, setSkipped] = useState(false);
   const [done, setDone] = useState(false);
   const onDoneRef = useRef(onDone);
-  onDoneRef.current = onDone;
+
+  // Håll alltid den senaste onDone-referensen uppdaterad i en effekt
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
 
   const currentLine = lines[lineIndex] ?? "";
   const visibleText = skipped ? currentLine : (currentLine.slice(0, charIndex));
@@ -80,8 +84,11 @@ export function Typewriter({
       return () => window.clearTimeout(id);
     }
 
-    setDone(true);
-    onDoneRef.current?.();
+    // Sätt "done" asynkront för att undvika kaskadrenderingar
+    window.setTimeout(() => {
+      setDone(true);
+      onDoneRef.current?.();
+    }, 0);
   }, [lineIndex, charIndex, currentLine.length, lines.length, speedMs, linePauseMs, done]);
 
   useEffect(() => {

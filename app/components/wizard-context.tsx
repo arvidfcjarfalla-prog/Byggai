@@ -41,7 +41,7 @@ export interface NybyggnationData {
   bygglov?: string;
 }
 
-export type FileTag = "ritning" | "foto" | "bygghandling" | "detaljplan" | "ovrigt";
+export type FileTag = "ritning" | "foto" | "bygghandling" | "detaljplan" | "inspiration" | "ovrigt";
 
 export type RelatesTo = "kök" | "badrum" | "fasad" | "mark" | "tak" | "el" | "vvs" | "övrigt";
 
@@ -52,6 +52,13 @@ export interface FileDoc {
   size: number;
   tags: FileTag[];
   relatesTo?: RelatesTo;
+  uploadedAt: string; // ISO timestamp
+  aiAnalysis?: {
+    detectedContent?: string[]; // ["ritning av kök", "skala 1:50"]
+    suggestedTags?: FileTag[];
+    suggestedRelatesTo?: RelatesTo;
+    confidence?: number; // 0-1
+  };
 }
 
 export interface BudgetData {
@@ -59,7 +66,6 @@ export interface BudgetData {
   intervalMax?: number;
   isHard?: boolean;
   financing?: "egen" | "bank" | "osaker";
-  /** User chose to continue despite budget warning */
   budgetAcknowledged?: boolean;
 }
 
@@ -68,7 +74,6 @@ export interface TidplanData {
   startTo?: string;
   executionPace?: "snabb" | "normal" | "kan_vanta";
   blockedWeeks?: string[]; // e.g. ["2026-W10", "2026-W11"]
-  /** Start window is flexible for matching */
   startWindowFlexible?: boolean;
 }
 
@@ -80,7 +85,7 @@ export interface RiskProfile {
   recommendedNextSteps: string[];
 }
 
-/** AI/entreprenör-vänlig sammanfattning, deriverad från wizard state */
+/** AI/entreprenör-vänlig sammanfattning */
 export interface ProjectBrief {
   shortSummary: string;
   scopeBullets: string[];
@@ -94,12 +99,37 @@ export interface Collaborator {
   role: "owner" | "read" | "edit";
 }
 
-/** Heuristic-derived summary from free text (no AI). */
+/** Heuristic-derived summary from free text (no AI) */
 export interface DerivedSummary {
   goal?: string;
   scope?: string;
   flags?: string[];
   extractedRooms?: string[];
+}
+
+/** AI-analys av projekt (mock för nu, verklig API senare) */
+export interface AIAnalysis {
+  timestamp: string;
+  summary: string;
+  detectedRisks: string[];
+  suggestedNextSteps: string[];
+  completeness: number; // 0-100
+  confidence: number; // 0-1
+}
+
+/** Offert draft - förberett för framtida offertmatchning */
+export interface QuoteDraft {
+  id: string;
+  createdAt: string;
+  status: "draft" | "pending" | "sent" | "received";
+  projectSnapshot: Partial<WizardData>; // Snapshot när offert skapades
+  aiSummary?: string; // AI-genererad sammanfattning för entreprenörer
+  sharedWith?: string[]; // Entreprenör-IDs (framtida)
+  metadata?: {
+    estimatedValue?: number;
+    complexity?: "low" | "medium" | "high";
+    matchScore?: number; // För entreprenör-matchning
+  };
 }
 
 export type UserRole = "privat" | "brf" | "entreprenor" | "osaker";
@@ -113,35 +143,58 @@ export interface WizardData {
   nybyggnation?: NybyggnationData;
   freeTextDescription?: string;
   derivedSummary?: DerivedSummary;
+  aiAnalysis?: AIAnalysis; // NYT: AI-analys av projektet
   omfattning?: string;
-  omfattningScope?: Record<string, boolean | string>; // type-specific scope answers
+  omfattningScope?: Record<string, boolean | string>;
   budget?: BudgetData;
   tidplan?: TidplanData;
   mal?: string;
   files?: FileDoc[];
   riskProfile?: RiskProfile;
   collaborators?: Collaborator[];
-  quoteDraft?: { createdAt: string; summary?: string; payload?: unknown };
+  quoteDraft?: QuoteDraft; // NYT: Uppdaterad quote draft
   decisionLog?: Array<{ at: string; what: string }>;
+  
+  // NYT: Resume-funktionalitet
+  resumePoint?: string; // Path där användaren var senast
+  completedSteps?: string[]; // Paths till färdiga steg
+  lastUpdated?: string; // ISO timestamp
 }
 
 interface WizardContextType {
   data: WizardData;
   updateData: (updates: Partial<WizardData>) => void;
   resetWizard: () => void;
+  softReset: () => void; // NYT: Behåller data men återställer steg
   currentStep: number;
   setCurrentStep: (step: number) => void;
   totalSteps: number;
   stepConfig: { label: string; path: string }[];
   calculateProgress: () => number;
   projectBrief: ProjectBrief;
+  
+  // Fil-hantering
   addFile: (file: FileDoc) => void;
   removeFile: (id: string) => void;
   updateFileTags: (id: string, tags: FileTag[]) => void;
   updateFileRelatesTo: (id: string, relatesTo: RelatesTo | undefined) => void;
+  
+  // Roll-hantering
   setRole: (role: UserRole) => void;
+  
+  // AI & Analys
   deriveSummaryFromText: (text: string, projectType: ProjectType) => DerivedSummary;
   computeRiskProfile: (data: WizardData) => RiskProfile;
+  requestAIAnalysis: () => Promise<void>; // NYT: Trigger AI-analys
+  
+  // Quote draft
+  createQuoteDraft: () => QuoteDraft; // NYT: Skapa offert draft
+  updateQuoteDraft: (updates: Partial<QuoteDraft>) => void; // NYT
+  
+  // Resume
+  canResume: boolean; // NYT: Om användaren kan återuppta
+  getResumePoint: () => string | null; // NYT: Hämta resume path
+  markStepCompleted: (path: string) => void; // NYT: Markera steg som klart
 }
 
 const WizardContext = createContext<WizardContextType | undefined>(undefined);
@@ -152,6 +205,7 @@ const ROLE_STORAGE_KEY = "byggplattformen-role";
 const initialData: WizardData = {
   projectType: null,
   currentPhase: null,
+  completedSteps: [],
 };
 
 function safeParse(json: string): unknown {
@@ -162,12 +216,13 @@ function safeParse(json: string): unknown {
   }
 }
 
-/** Step config per project type (order of wizard pages). */
+/** Step config per project type */
 function getStepConfig(projectType: ProjectType): { label: string; path: string }[] {
   const base = [
     { label: "Projekttyp", path: "/start" },
     { label: "Nuläge", path: "/start/nulage" },
   ];
+  
   if (projectType === "renovering") {
     base.push({ label: "Renovering", path: "/start/renovering" });
   } else if (projectType === "tillbyggnad") {
@@ -175,9 +230,11 @@ function getStepConfig(projectType: ProjectType): { label: string; path: string 
   } else if (projectType === "nybyggnation") {
     base.push({ label: "Nybyggnation", path: "/start/nybyggnation" });
   }
+  
   if (projectType) {
     base.push({ label: "Beskrivning", path: "/start/beskrivning" });
   }
+  
   if (projectType === "annat") {
     base.push(
       { label: "Underlag", path: "/start/underlag" },
@@ -195,10 +252,11 @@ function getStepConfig(projectType: ProjectType): { label: string; path: string 
       { label: "Sammanfattning", path: "/start/sammanfattning" }
     );
   }
+  
   return base;
 }
 
-/** Heuristic derivation from free text (no API). */
+/** Heuristic derivation from free text */
 export function deriveSummaryFromText(
   text: string,
   _projectType: ProjectType
@@ -216,22 +274,29 @@ export function deriveSummaryFromText(
     "tak",
     "grund",
   ];
+  
   riskWords.forEach((w) => {
     if (t.includes(w)) flags.push(w);
   });
+  
   const rooms: string[] = [];
-  ["kök", "badrum", "vardagsrum", "sovrum", "hall", "tvättrum", "kontor"].forEach(
-    (r) => {
-      if (t.includes(r)) rooms.push(r);
-    }
-  );
+  ["kök", "badrum", "vardagsrum", "sovrum", "hall", "tvättrum", "kontor"].forEach((r) => {
+    if (t.includes(r)) rooms.push(r);
+  });
+  
   const sentences = text.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
   const goal = sentences[0]?.slice(0, 120) || undefined;
   const scope = sentences.length > 1 ? sentences.slice(1).join(". ").slice(0, 200) : undefined;
-  return { goal, scope, flags: flags.length ? flags : undefined, extractedRooms: rooms.length ? rooms : undefined };
+  
+  return {
+    goal,
+    scope,
+    flags: flags.length ? flags : undefined,
+    extractedRooms: rooms.length ? rooms : undefined
+  };
 }
 
-/** Compute risk profile from wizard data (transparent, neutral). */
+/** Compute risk profile */
 export function computeRiskProfile(data: WizardData): RiskProfile {
   const reasons: string[] = [];
   const recommendedNextSteps: string[] = [];
@@ -289,34 +354,39 @@ export function computeRiskProfile(data: WizardData): RiskProfile {
         : ["Granska sammanfattningen och nästa steg innan du delar med andra."],
     };
   }
+  
   if (reasons.length >= 3) {
     return { level: "red", reasons, recommendedNextSteps };
   }
+  
   return { level: "yellow", reasons, recommendedNextSteps };
 }
 
-/** Derive ProjectBrief from wizard data for AI/entreprenör. */
-export function getProjectBrief(data: WizardData): ProjectBrief {
+/** Generate project brief */
+function getProjectBrief(data: WizardData): ProjectBrief {
   const riskProfile = computeRiskProfile(data);
   const scopeBullets: string[] = [];
   const assumptions: string[] = [];
   const openQuestions: string[] = [];
 
-  if (data.projectType) {
-    scopeBullets.push(`Projekttyp: ${data.projectType}`);
+  if (data.freeTextDescription) {
+    scopeBullets.push(`Fritext: ${data.freeTextDescription.slice(0, 100)}...`);
   }
-  if (data.currentPhase) {
-    scopeBullets.push(`Nuläge: ${data.currentPhase}`);
+  if (data.derivedSummary?.goal) {
+    scopeBullets.push(`Mål: ${data.derivedSummary.goal}`);
+  }
+  if (data.derivedSummary?.extractedRooms?.length) {
+    scopeBullets.push(`Rum: ${data.derivedSummary.extractedRooms.join(", ")}`);
   }
 
   if (data.projectType === "renovering" && data.renovering) {
     const rooms = Object.entries(data.renovering)
-      .filter(([, v]) => v === true)
+      .filter(([_, v]) => v)
       .map(([k]) => k);
-    if (rooms.length) scopeBullets.push(`Rum: ${rooms.join(", ")}`);
+    if (rooms.length) scopeBullets.push(`Renovering: ${rooms.join(", ")}`);
   }
-  if (data.projectType === "tillbyggnad" && data.tillbyggnad?.storlek) {
-    scopeBullets.push(`Tillbyggnad storlek: ${data.tillbyggnad.storlek}`);
+  if (data.projectType === "tillbyggnad" && data.tillbyggnad) {
+    if (data.tillbyggnad.storlek) scopeBullets.push(`Storlek: ${data.tillbyggnad.storlek}`);
     if (data.tillbyggnad.typ) scopeBullets.push(`Typ: ${data.tillbyggnad.typ}`);
   }
   if (data.projectType === "nybyggnation" && data.nybyggnation) {
@@ -337,12 +407,14 @@ export function getProjectBrief(data: WizardData): ProjectBrief {
       assumptions.push("Användaren vill fortsätta trots budgetvarning.");
     }
   }
+  
   if (data.tidplan?.startFrom || data.tidplan?.startTo) {
     scopeBullets.push(`Start: ${data.tidplan.startFrom ?? "?"}–${data.tidplan.startTo ?? "?"}`);
     if (data.tidplan.startWindowFlexible !== undefined) {
       assumptions.push(`Start-fönster flexibelt: ${data.tidplan.startWindowFlexible ? "ja" : "nej"}`);
     }
   }
+  
   if (data.tidplan?.executionPace) {
     scopeBullets.push(`Tempo: ${data.tidplan.executionPace}`);
   }
@@ -360,6 +432,7 @@ export function getProjectBrief(data: WizardData): ProjectBrief {
   if (data.projectType) parts.push(data.projectType);
   if (data.currentPhase) parts.push(`nuläge ${data.currentPhase}`);
   if (data.omfattning) parts.push(data.omfattning);
+  
   const shortSummary =
     parts.length > 0
       ? `Projekt: ${parts.join(", ")}. ${scopeBullets.length ? "Scope: " + scopeBullets.slice(0, 3).join("; ") + "." : ""}`
@@ -384,6 +457,7 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
   );
   const totalSteps = stepConfig.length;
 
+  // Load saved state on mount
   useEffect(() => {
     const saved =
       typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
@@ -394,14 +468,20 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
 
     const restored = parsed as WizardData;
     let role = restored.userRole;
+    
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem(ROLE_STORAGE_KEY);
       if (stored && ["privat", "brf", "entreprenor", "osaker"].includes(stored)) {
         role = stored as UserRole;
       }
     }
-    setData({ ...initialData, ...restored, userRole: role ?? restored.userRole });
+    
+    // Uppdatera state asynkront för att undvika kaskadrenderingar i effekt
+    window.setTimeout(() => {
+      setData({ ...initialData, ...restored, userRole: role ?? restored.userRole });
+    }, 0);
 
+    // Auto-resume logic
     const config = getStepConfig(restored.projectType);
     let step = 1;
     if (restored.projectType) step = 2;
@@ -412,20 +492,34 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
     if (restored.omfattning) step = Math.max(step, 6);
     if (restored.budget?.intervalMin !== undefined) step = Math.max(step, 7);
     if (restored.tidplan?.startFrom) step = Math.max(step, 8);
-    setCurrentStep(Math.min(step, config.length || 1));
+
+    // Sätt aktuellt steg asynkront för att undvika varningen om kaskadrenderingar
+    window.setTimeout(() => {
+      setCurrentStep(Math.min(step, config.length || 1));
+    }, 0);
   }, []);
 
+  // Auto-save to localStorage
   useEffect(() => {
     if (!data.projectType) return;
+    
     const id = window.setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      const dataToSave = {
+        ...data,
+        lastUpdated: new Date().toISOString(),
+        resumePoint: stepConfig[currentStep - 1]?.path,
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
     }, 300);
+    
     return () => window.clearTimeout(id);
-  }, [data]);
+  }, [data, currentStep, stepConfig]);
 
   const updateData = useCallback((updates: Partial<WizardData>) => {
     setData((prev) => {
       const next: WizardData = { ...prev, ...updates };
+      
+      // Nested object merging
       if (updates.renovering) {
         next.renovering = { ...(prev.renovering ?? {}), ...updates.renovering };
       }
@@ -444,6 +538,7 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
       if (updates.omfattningScope) {
         next.omfattningScope = { ...(prev.omfattningScope ?? {}), ...updates.omfattningScope };
       }
+      
       return next;
     });
   }, []);
@@ -451,7 +546,19 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
   const resetWizard = useCallback(() => {
     setData(initialData);
     setCurrentStep(1);
-    if (typeof window !== "undefined") localStorage.removeItem(STORAGE_KEY);
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, []);
+
+  const softReset = useCallback(() => {
+    // Behåller data men återställer steg
+    setCurrentStep(1);
+    setData((prev) => ({
+      ...prev,
+      resumePoint: undefined,
+      completedSteps: [],
+    }));
   }, []);
 
   const addFile = useCallback((file: FileDoc) => {
@@ -508,19 +615,82 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
     return Math.round((completed / denom) * 100);
   }, [data, totalSteps]);
 
+  // AI Analysis (mock for now, can be replaced with real API)
+  const requestAIAnalysis = useCallback(async () => {
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    const analysis: AIAnalysis = {
+      timestamp: new Date().toISOString(),
+      summary: `Projekt: ${data.projectType || "okänd typ"}. ${data.omfattning ? data.omfattning.slice(0, 100) : "Ingen omfattning angiven."}`,
+      detectedRisks: data.riskProfile?.reasons || [],
+      suggestedNextSteps: data.riskProfile?.recommendedNextSteps || ["Fortsätt fylla i wizard"],
+      completeness: calculateProgress(),
+      confidence: 0.85,
+    };
+    
+    setData((prev) => ({ ...prev, aiAnalysis: analysis }));
+  }, [data, calculateProgress]);
+
+  // Quote Draft
+  const projectBrief = useMemo(() => getProjectBrief(data), [data]);
+
+  const createQuoteDraft = useCallback((): QuoteDraft => {
+    const currentBrief = getProjectBrief(data);
+    const draft: QuoteDraft = {
+      id: `quote-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      status: "draft",
+      projectSnapshot: { ...data },
+      aiSummary: currentBrief.shortSummary,
+      metadata: {
+        complexity: data.riskProfile?.level === "red" ? "high" : 
+                   data.riskProfile?.level === "yellow" ? "medium" : "low",
+        estimatedValue: data.budget?.intervalMax,
+      },
+    };
+    
+    setData((prev) => ({ ...prev, quoteDraft: draft }));
+    return draft;
+  }, [data]);
+
+  const updateQuoteDraft = useCallback((updates: Partial<QuoteDraft>) => {
+    setData((prev) => ({
+      ...prev,
+      quoteDraft: prev.quoteDraft ? { ...prev.quoteDraft, ...updates } : undefined,
+    }));
+  }, []);
+
+  // Resume functionality
+  const canResume = useMemo(() => {
+    return !!(data.resumePoint && data.projectType);
+  }, [data.resumePoint, data.projectType]);
+
+  const getResumePoint = useCallback(() => {
+    return data.resumePoint || null;
+  }, [data.resumePoint]);
+
+  const markStepCompleted = useCallback((path: string) => {
+    setData((prev) => ({
+      ...prev,
+      completedSteps: [...(prev.completedSteps || []), path].filter(
+        (p, i, arr) => arr.indexOf(p) === i // Deduplicate
+      ),
+    }));
+  }, []);
+
   const computeRiskProfileCb = useCallback((d: WizardData) => computeRiskProfile(d), []);
   const deriveSummaryFromTextCb = useCallback(
     (text: string, projectType: ProjectType) => deriveSummaryFromText(text, projectType),
     []
   );
 
-  const projectBrief = useMemo(() => getProjectBrief(data), [data]);
-
   const value: WizardContextType = useMemo(
     () => ({
       data,
       updateData,
       resetWizard,
+      softReset,
       currentStep,
       setCurrentStep,
       totalSteps,
@@ -534,11 +704,18 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
       setRole,
       deriveSummaryFromText: deriveSummaryFromTextCb,
       computeRiskProfile: computeRiskProfileCb,
+      requestAIAnalysis,
+      createQuoteDraft,
+      updateQuoteDraft,
+      canResume,
+      getResumePoint,
+      markStepCompleted,
     }),
     [
       data,
       updateData,
       resetWizard,
+      softReset,
       currentStep,
       setCurrentStep,
       totalSteps,
@@ -552,6 +729,12 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
       setRole,
       deriveSummaryFromTextCb,
       computeRiskProfileCb,
+      requestAIAnalysis,
+      createQuoteDraft,
+      updateQuoteDraft,
+      canResume,
+      getResumePoint,
+      markStepCompleted,
     ]
   );
 

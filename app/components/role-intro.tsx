@@ -16,31 +16,52 @@ const INTRO_LINES = [
   "vem är du?",
 ];
 
-/** Pause only before last line ("vem är du?") */
-const INTRO_LINE_PAUSES: number[] = [0, 0, 420];
+const INTRO_LINE_PAUSES: number[] = [200, 200, 800];
 
-const CHOICES: { id: RoleId; label: string; cta: string }[] = [
-  { id: "privat", label: "Privatperson", cta: "Starta byggprojekt" },
-  { id: "brf", label: "Bostadsrättsförening", cta: "Planera åtgärder & upphandling" },
-  { id: "entreprenor", label: "Entreprenör", cta: "Ta emot strukturerade förfrågningar" },
-  { id: "osaker", label: "Osäker / Annat", cta: "Hjälp mig hitta rätt" },
+const CHOICES: { id: RoleId; title: string; subtitle: string; desc: string }[] = [
+  {
+    id: "privat",
+    title: "Privatperson",
+    subtitle: "Starta byggprojekt",
+    desc: "Jag planerar ett projekt för min bostad"
+  },
+  {
+    id: "brf",
+    title: "Bostadsrättsförening",
+    subtitle: "Planera åtgärder",
+    desc: "Vi behöver strukturera renoveringar"
+  },
+  {
+    id: "entreprenor",
+    title: "Entreprenör",
+    subtitle: "Ta emot förfrågningar",
+    desc: "Jag vill ta emot projekt och ge offerter"
+  },
+  {
+    id: "osaker",
+    title: "Osäker / Annat",
+    subtitle: "Hjälp mig hitta rätt",
+    desc: "Jag behöver vägledning"
+  },
 ];
 
-const INITIERAR: Record<RoleId, string> = {
-  privat: "initierar projekt för privatperson…",
-  brf: "initierar planering för förening…",
-  entreprenor: "initierar entreprenörsläge…",
-  osaker: "initierar vägledning…",
+const ROLE_LABELS: Record<RoleId, string> = {
+  privat: "Privatperson",
+  brf: "Bostadsrättsförening",
+  entreprenor: "Entreprenör",
+  osaker: "Osäker / Annat",
 };
 
-const ROUTE_AFTER_MS = 450;
+const CARDS_ENABLE_DELAY_MS = 1200;
+const ROUTE_DELAY_MS = 800;
 
 export function RoleIntro() {
   const router = useRouter();
   const { updateData } = useWizard();
-  const [phase, setPhase] = useState<"typing" | "choices" | "initierar">("typing");
+  const [phase, setPhase] = useState<"typing" | "choices" | "action" | "transitioning">("typing");
   const [selectedRole, setSelectedRole] = useState<RoleId | null>(null);
-  const [initierarLine, setInitierarLine] = useState("");
+  const [cardsEnabled, setCardsEnabled] = useState(false);
+  const [transitionText, setTransitionText] = useState("");
 
   const saveRole = useCallback((role: RoleId) => {
     if (typeof window !== "undefined") {
@@ -50,103 +71,249 @@ export function RoleIntro() {
 
   const handleDone = useCallback(() => {
     setPhase("choices");
+    setTimeout(() => setCardsEnabled(true), CARDS_ENABLE_DELAY_MS);
   }, []);
 
-  const handleChoice = useCallback(
+  const handleRoleChoice = useCallback(
     (role: RoleId) => {
-      if (selectedRole) return;
+      if (!cardsEnabled || selectedRole) return;
+      
       setSelectedRole(role);
-      setPhase("initierar");
-      setInitierarLine(INITIERAR[role]);
+      setPhase("action");
       saveRole(role);
+      
       if (role === "osaker") updateData({ projectType: "annat" });
     },
-    [selectedRole, saveRole, updateData]
+    [cardsEnabled, selectedRole, saveRole, updateData]
   );
 
-  useEffect(() => {
-    if (phase !== "initierar" || !selectedRole) return;
-    const t = window.setTimeout(() => {
-      if (selectedRole === "privat") router.push("/start");
-      else if (selectedRole === "brf") router.push("/brf");
-      else if (selectedRole === "entreprenor") router.push("/entreprenor");
-      else router.push("/start");
-    }, ROUTE_AFTER_MS);
-    return () => window.clearTimeout(t);
-  }, [phase, selectedRole, router]);
+  const handleActionChoice = useCallback(
+    (action: "landing" | "wizard") => {
+      if (!selectedRole) return;
+      
+      setPhase("transitioning");
+      setTransitionText(action === "landing" ? "tar dig till startsidan…" : "startar projektet…");
+      
+      setTimeout(() => {
+        if (action === "wizard") {
+          router.push("/start");
+        } else {
+          // Navigate to role-specific landing
+          if (selectedRole === "privat") router.push("/privatperson");
+          else if (selectedRole === "brf") router.push("/brf");
+          else if (selectedRole === "entreprenor") router.push("/entreprenor");
+          else router.push("/privatperson");
+        }
+      }, ROUTE_DELAY_MS);
+    },
+    [selectedRole, router]
+  );
 
   return (
     <main
       className="min-h-screen bg-[#FAF8F5] text-[#2A2520] antialiased"
       style={{
         backgroundImage: `
-          radial-gradient(circle at 20% 30%, rgba(205, 180, 155, 0.06) 0%, transparent 50%),
-          radial-gradient(circle at 80% 70%, rgba(140, 120, 100, 0.05) 0%, transparent 50%)
+          radial-gradient(circle at 20% 30%, rgba(205, 180, 155, 0.08) 0%, transparent 50%),
+          radial-gradient(circle at 80% 70%, rgba(140, 120, 100, 0.06) 0%, transparent 50%)
         `,
       }}
     >
-      <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-12">
-        <div
-          className="rounded-2xl border border-[#E8E3DC] bg-white/70 p-8 shadow-sm backdrop-blur-sm"
-          aria-live="polite"
-        >
-          {phase === "typing" && (
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-6 py-12">
+        {/* Typing phase */}
+        {phase === "typing" && (
+          <div className="mx-auto w-full max-w-3xl text-center">
             <Typewriter
               lines={INTRO_LINES}
-              speedMs={42}
+              speedMs={50}
               linePauseMs={INTRO_LINE_PAUSES}
               onDone={handleDone}
               skippable
               cursor
-              className="font-sans text-lg leading-relaxed text-[#2A2520] md:text-xl"
+              className="font-display text-3xl font-light leading-relaxed text-[#2A2520] md:text-4xl lg:text-5xl"
             />
-          )}
+          </div>
+        )}
 
-          {phase === "choices" && (
-            <div className="space-y-1">
+        {/* Role choices */}
+        {phase === "choices" && (
+          <div className="w-full">
+            <div className="mb-16 space-y-3 text-center">
               {INTRO_LINES.map((line, i) => (
-                <div key={i} className="min-h-[1.5em] text-lg text-[#2A2520] md:text-xl">
+                <div 
+                  key={i} 
+                  className={`font-display text-2xl md:text-3xl lg:text-4xl ${
+                    i === INTRO_LINES.length - 1 
+                      ? 'font-bold text-[#2A2520]' 
+                      : 'font-light text-[#766B60]'
+                  }`}
+                >
                   {line}
                 </div>
               ))}
-              <div className="mt-6 space-y-2 border-t border-[#E8E3DC] pt-6">
-                {CHOICES.map((c, idx) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => handleChoice(c.id)}
-                    className="flex w-full items-center justify-between rounded-xl border border-[#E8E3DC] bg-white px-4 py-3 text-left font-sans text-[#2A2520] transition-colors hover:border-[#8C7860] hover:bg-[#FAF8F5] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
-                  >
-                    <span className="font-medium">
-                      {idx + 1}) {c.label}
-                    </span>
-                    <span className="text-sm text-[#8C7860]">{c.cta}</span>
-                  </button>
-                ))}
-              </div>
-              <p className="mt-4 text-xs text-[#766B60]">
-                Tryck Enter eller mellanslag för att hoppa över text.
-              </p>
             </div>
-          )}
 
-          {phase === "initierar" && (
-            <div className="space-y-1">
+            <div className="grid gap-6 md:grid-cols-2 lg:gap-8">
+              {CHOICES.map((choice, idx) => {
+                const isDisabled = !cardsEnabled;
+
+                return (
+                  <button
+                    key={choice.id}
+                    type="button"
+                    onClick={() => handleRoleChoice(choice.id)}
+                    disabled={isDisabled}
+                    className={`group relative overflow-hidden rounded-3xl border-2 p-10 text-left transition-all duration-500 ${
+                      isDisabled
+                        ? 'border-[#E8E3DC]/50 bg-white/50 opacity-60 cursor-not-allowed'
+                        : 'border-[#E8E3DC] bg-white hover:border-[#CDB49B] hover:shadow-2xl hover:scale-[1.02] cursor-pointer'
+                    }`}
+                    style={{
+                      animation: `fadeInUp 0.8s ease-out ${idx * 150}ms both`
+                    }}
+                  >
+                    <h3 className="mb-2 font-display text-2xl font-bold text-[#2A2520] lg:text-3xl">
+                      {choice.title}
+                    </h3>
+
+                    <p className="mb-4 text-base font-semibold text-[#8C7860]">
+                      {choice.subtitle}
+                    </p>
+
+                    <p className="text-base leading-relaxed text-[#766B60]">
+                      {choice.desc}
+                    </p>
+
+                    <div className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-[#CDB49B]/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="mt-8 text-center text-sm text-[#766B60]">
+              {cardsEnabled 
+                ? "Välj ett alternativ för att fortsätta" 
+                : "Väntar…"}
+            </p>
+          </div>
+        )}
+
+        {/* Action choice (landing vs wizard) */}
+        {phase === "action" && selectedRole && (
+          <div className="w-full">
+            <div className="mb-12 space-y-3 text-center">
               {INTRO_LINES.map((line, i) => (
-                <div key={i} className="min-h-[1.5em] text-lg text-[#2A2520] md:text-xl">
+                <div 
+                  key={i} 
+                  className={`font-display text-2xl md:text-3xl lg:text-4xl ${
+                    i === INTRO_LINES.length - 1 
+                      ? 'font-bold text-[#2A2520]' 
+                      : 'font-light text-[#766B60]'
+                  }`}
+                >
                   {line}
                 </div>
               ))}
-              <div className="mt-6 border-t border-[#E8E3DC] pt-6">
-                <p className="font-sans text-lg text-[#8C7860] md:text-xl">
-                  {initierarLine}
-                  <span className="animate-pulse">|</span>
+            </div>
+
+            <div className="mx-auto max-w-3xl">
+              <div className="mb-10 rounded-3xl border-2 border-[#8C7860] bg-gradient-to-br from-[#8C7860]/5 to-[#CDB49B]/5 p-8 text-center">
+                <p className="text-lg text-[#766B60]">Du har valt:</p>
+                <p className="font-display mt-2 text-3xl font-bold text-[#2A2520]">
+                  {ROLE_LABELS[selectedRole]}
                 </p>
               </div>
+
+              <h2 className="mb-8 text-center font-display text-2xl font-bold text-[#2A2520] md:text-3xl">
+                Vad vill du göra?
+              </h2>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleActionChoice("landing")}
+                  className="group relative overflow-hidden rounded-3xl border-2 border-[#E8E3DC] bg-white p-10 text-center transition-all duration-300 hover:border-[#8C7860] hover:shadow-2xl hover:scale-[1.02]"
+                >
+                  <h3 className="mb-3 font-display text-2xl font-bold text-[#2A2520]">
+                    Läs mer
+                  </h3>
+                  <p className="mb-6 text-base text-[#766B60]">
+                    Om plattformen och hur den fungerar
+                  </p>
+                  <div className="mx-auto inline-flex items-center gap-2 text-sm font-semibold text-[#8C7860]">
+                    Gå till startsidan
+                    <svg className="transition-transform group-hover:translate-x-1" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="5" y1="8" x2="14" y2="8" />
+                      <polyline points="10 4 14 8 10 12" />
+                    </svg>
+                  </div>
+                  <div className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-[#CDB49B]/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleActionChoice("wizard")}
+                  className="group relative overflow-hidden rounded-3xl border-2 border-[#8C7860] bg-gradient-to-br from-[#8C7860]/10 to-[#CDB49B]/10 p-10 text-center transition-all duration-300 hover:border-[#6B5A47] hover:shadow-2xl hover:scale-[1.02]"
+                >
+                  <h3 className="mb-3 font-display text-2xl font-bold text-[#2A2520]">
+                    Initiera projekt
+                  </h3>
+                  <p className="mb-6 text-base text-[#766B60]">
+                    Kom igång direkt med projektet
+                  </p>
+                  <div className="mx-auto inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-6 py-3 text-sm font-semibold text-white shadow-lg transition-transform group-hover:scale-105">
+                    Starta nu
+                    <svg className="transition-transform group-hover:translate-x-1" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="5" y1="8" x2="14" y2="8" />
+                      <polyline points="10 4 14 8 10 12" />
+                    </svg>
+                  </div>
+                </button>
+              </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Transitioning */}
+        {phase === "transitioning" && (
+          <div className="mx-auto w-full max-w-3xl text-center">
+            <div className="space-y-3">
+              {INTRO_LINES.map((line, i) => (
+                <div 
+                  key={i} 
+                  className={`font-display text-2xl md:text-3xl lg:text-4xl ${
+                    i === INTRO_LINES.length - 1 
+                      ? 'font-bold text-[#2A2520]' 
+                      : 'font-light text-[#766B60]'
+                  }`}
+                >
+                  {line}
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-12">
+              <p className="font-display text-2xl text-[#8C7860] md:text-3xl">
+                {transitionText}
+                <span className="animate-pulse">|</span>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
+
+      <style jsx global>{`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(30px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </main>
   );
 }

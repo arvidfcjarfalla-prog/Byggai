@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Logga in – Byggplattformen",
@@ -11,7 +12,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-gradient-to-b from-white to-slate-50 text-slate-900 antialiased">
       <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <a
+          <Link
             href="/"
             className="flex items-center gap-2 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2"
           >
@@ -19,14 +20,14 @@ export default function LoginPage() {
             <span className="text-sm font-semibold tracking-tight">
               Byggplattformen
             </span>
-          </a>
+          </Link>
 
-          <a
+          <Link
             href="/konto"
             className="text-sm font-semibold text-slate-700 outline-none transition-colors duration-150 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-slate-900 focus-visible:ring-offset-2 motion-reduce:transition-none"
           >
             Skapa konto
-          </a>
+          </Link>
         </div>
       </header>
 
