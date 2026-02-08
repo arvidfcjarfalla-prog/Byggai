@@ -16,6 +16,34 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+### Dev bypass (optional)
+
+For faster local navigation without logging in each time:
+
+```bash
+NEXT_PUBLIC_DEV_BYPASS_AUTH=true
+NEXT_PUBLIC_DEV_BYPASS_ROLE=privat
+```
+
+Valid roles for `NEXT_PUBLIC_DEV_BYPASS_ROLE` are: `privat`, `brf`, `entreprenor`, `osaker`.
+
+In development mode, a floating `Dev meny` is also shown for quick role switching and deep links.
+
+### AI extraction setup
+
+To enable real AI extraction of uploaded maintenance plans:
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+```
+
+Current extraction support:
+- `txt`, `csv`, `md`, `json` (direct)
+- `doc`, `docx`, `rtf`, `odt` (via `textutil` on macOS)
+- `xls`, `xlsx`, `xlsm` (sheet parsing via `xlsx`)
+
+Note: PDF OCR/text extraction is not enabled yet in the API route. For now, use text-based files or DOCX.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

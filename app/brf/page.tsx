@@ -2,10 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { RoleSwitcher } from "../components/role-switcher";
+
+const ROLE_STORAGE_KEY = "byggplattformen-role";
 
 export default function BrfPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(ROLE_STORAGE_KEY, "brf");
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -97,13 +104,13 @@ export default function BrfPage() {
 
           <div className="flex items-center gap-4">
             <Link
-              href="/konto"
+              href="/konto?role=brf"
               className="hidden rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white shadow-md outline-none transition-all duration-300 hover:bg-[#6B5A47] hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 md:inline-flex"
             >
               Skapa konto
             </Link>
             <Link
-              href="/login"
+              href="/login?role=brf"
               className="hidden text-sm font-medium text-[#766B60] outline-none transition-colors duration-300 hover:text-[#8C7860] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 md:inline-flex"
             >
               Logga in
@@ -125,6 +132,10 @@ export default function BrfPage() {
           </div>
         </div>
       </header>
+
+      <div className="mx-auto mt-4 max-w-7xl px-6 lg:px-8">
+        <RoleSwitcher current="brf" />
+      </div>
 
       {/* Side Menu */}
       {menuOpen && (
@@ -172,9 +183,9 @@ export default function BrfPage() {
               className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-6 text-sm"
             >
               {[
-                { href: "/start", label: "Planera åtgärder" },
-                { href: "/konto", label: "Skapa konto" },
-                { href: "/", label: "Byt roll" },
+                { href: "/brf/start", label: "Initiera BRF-projekt" },
+                { href: "/konto?role=brf", label: "Skapa konto" },
+                { href: "/?chooseRole=1", label: "Byt roll" },
                 { href: "#hur", label: "Så funkar det" },
                 { href: "#faq", label: "FAQ" },
               ].map((item, i) => (
@@ -222,10 +233,10 @@ export default function BrfPage() {
 
               <div className="mt-10 flex flex-col gap-4 opacity-0 animate-fade-in-up delay-300 sm:flex-row sm:items-center">
                 <Link
-                  href="/start"
+                  href="/brf/start"
                   className="group inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 sm:flex-none"
                 >
-                  Planera åtgärder
+                  Initiera BRF-projekt
                   <svg
                     className="transition-transform duration-300 group-hover:translate-x-1"
                     width="16"
@@ -352,7 +363,7 @@ export default function BrfPage() {
 
           <div className="mt-14 text-center">
             <Link
-              href="/start"
+              href="/dashboard/brf/underhallsplan"
               className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
             >
               Skapa åtgärdsplan
@@ -491,7 +502,7 @@ export default function BrfPage() {
               <a href="#hur" className="hover:text-[#8C7860]">Så funkar det</a>
               <a href="#varfor" className="hover:text-[#8C7860]">Varför detta</a>
               <a href="#faq" className="hover:text-[#8C7860]">FAQ</a>
-              <Link href="/start" className="hover:text-[#8C7860]">Kom igång</Link>
+              <Link href="/dashboard/brf/underhallsplan" className="hover:text-[#8C7860]">Kom igång</Link>
             </div>
           </div>
         </div>

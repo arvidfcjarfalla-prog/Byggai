@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Typewriter } from "./ui/typewriter";
 import { useWizard } from "./wizard-context";
 
@@ -52,6 +52,13 @@ const ROLE_LABELS: Record<RoleId, string> = {
   osaker: "Osäker / Annat",
 };
 
+const WIZARD_ROUTES: Record<RoleId, string> = {
+  privat: "/start",
+  brf: "/brf/start",
+  entreprenor: "/entreprenor",
+  osaker: "/start",
+};
+
 const CARDS_ENABLE_DELAY_MS = 1200;
 const ROUTE_DELAY_MS = 800;
 
@@ -96,7 +103,7 @@ export function RoleIntro() {
       
       setTimeout(() => {
         if (action === "wizard") {
-          router.push("/start");
+          router.push(WIZARD_ROUTES[selectedRole]);
         } else {
           // Navigate to role-specific landing
           if (selectedRole === "privat") router.push("/privatperson");

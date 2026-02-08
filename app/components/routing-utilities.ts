@@ -1,24 +1,67 @@
-/**
- * Routing Utilities
- *
- * Hanterar smooth transitions och wizard state vid navigation
- */
-
 "use client";
 
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
-import type { WizardData } from "./wizard-context";
 
 /**
- * Smooth navigation – enkel delay utan att manipulera body-opacity
+ * Routing Utilities
+ *
+ * Hanterar wizard-nav och enklare route guards för startflödet.
+ */
+
+export type ProjectType = "renovering" | "tillbyggnad" | "nybyggnation" | "annat" | null;
+
+const BASE_STEP_ORDER = [
+  "/start",
+  "/start/nulage",
+] as const;
+
+const COMMON_END_STEPS = [
+  "/start/beskrivning",
+  "/start/underlag",
+  "/start/omfattning",
+  "/start/budget",
+  "/start/tidplan",
+  "/start/sammanfattning",
+] as const;
+
+export type WizardStepPath =
+  | (typeof BASE_STEP_ORDER)[number]
+  | "/start/renovering"
+  | "/start/tillbyggnad"
+  | "/start/nybyggnation"
+  | (typeof COMMON_END_STEPS)[number];
+
+function getProjectSpecificStep(projectType: ProjectType): WizardStepPath | null {
+  if (projectType === "renovering") return "/start/renovering";
+  if (projectType === "tillbyggnad") return "/start/tillbyggnad";
+  if (projectType === "nybyggnation") return "/start/nybyggnation";
+  return null;
+}
+
+function getWizardStepOrder(projectType: ProjectType): WizardStepPath[] {
+  const order: WizardStepPath[] = [...BASE_STEP_ORDER];
+  const projectSpecificStep = getProjectSpecificStep(projectType);
+  if (projectSpecificStep) {
+    order.push(projectSpecificStep);
+  }
+
+  if (projectType) {
+    order.push(...COMMON_END_STEPS);
+  }
+
+  return order;
+}
+
+/**
+ * Smooth navigation med enkel fade-out på body innan route push.
  */
 export function useSmoothNavigation() {
   const router = useRouter();
 
   const navigate = useCallback(
     (path: string, delay = 200) => {
-      setTimeout(() => {
+      window.setTimeout(() => {
         router.push(path);
       }, delay);
     },
@@ -29,7 +72,63 @@ export function useSmoothNavigation() {
 }
 
 /**
- * Routing-regler per roll
+ * Route guards för wizard med lättviktig validering.
+ */
+export function canAccessWizardStep(
+  targetPath: string,
+  completedSteps: string[] = [],
+  currentProjectType: ProjectType
+): { allowed: boolean; redirectTo?: string; reason?: string } {
+  const projectType = currentProjectType;
+
+  if (targetPath === "/start") return { allowed: true };
+
+  if (!projectType && targetPath !== "/start/nulage") {
+    return {
+      allowed: false,
+      redirectTo: "/start",
+      reason: "Du måste välja projekttyp först.",
+    };
+  }
+
+  const projectStep = getProjectSpecificStep(projectType);
+  if (
+    targetPath === "/start/renovering" ||
+    targetPath === "/start/tillbyggnad" ||
+    targetPath === "/start/nybyggnation"
+  ) {
+    if (!projectStep || targetPath !== projectStep) {
+      return {
+        allowed: false,
+        redirectTo: "/start",
+        reason: "Det här steget matchar inte vald projekttyp.",
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (completedSteps.includes(targetPath)) {
+    return { allowed: true };
+  }
+
+  const order = getWizardStepOrder(projectType);
+  const targetIndex = order.indexOf(targetPath as WizardStepPath);
+  if (targetIndex <= 0) return { allowed: true };
+
+  const previousPath = order[targetIndex - 1];
+  if (!completedSteps.includes(previousPath)) {
+    return {
+      allowed: false,
+      redirectTo: previousPath,
+      reason: "Slutför föregående steg först.",
+    };
+  }
+
+  return { allowed: true };
+}
+
+/**
+ * Routing-regler per roll.
  */
 export const ROLE_ROUTES = {
   privat: {
@@ -62,237 +161,61 @@ export function getRoleRoute(
 }
 
 /**
- * Wizard step order
- */
-export const WIZARD_STEP_ORDER = [
-  "/start",
-  "/start/nulage",
-  "/start/renovering",
-  "/start/tillbyggnad",
-  "/start/nybyggnation",
-  "/start/beskrivning",
-  "/start/underlag",
-  "/start/omfattning",
-  "/start/budget",
-  "/start/tidplan",
-  "/start/sammanfattning",
-] as const;
-
-export type WizardStepPath = (typeof WIZARD_STEP_ORDER)[number];
-
-/**
- * Route guards – kontrollera om användare kan komma åt sida
- */
-export function canAccessWizardStep(
-  targetPath: WizardStepPath,
-  data: WizardData
-): { allowed: boolean; redirectTo?: WizardStepPath; reason?: string } {
-  const { projectType, currentPhase, description } = data;
-
-  if (targetPath === "/start") {
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/nulage") {
-    if (!projectType) {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Du behöver först välja projekttyp.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (
-    targetPath === "/start/renovering" ||
-    targetPath === "/start/tillbyggnad" ||
-    targetPath === "/start/nybyggnation"
-  ) {
-    if (!projectType) {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Du behöver först välja projekttyp.",
-      };
-    }
-    if (!currentPhase) {
-      return {
-        allowed: false,
-        redirectTo: "/start/nulage",
-        reason: "Fyll i nuläge innan du går vidare.",
-      };
-    }
-    if (targetPath === "/start/renovering" && projectType !== "renovering") {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Det här steget gäller bara för renovering.",
-      };
-    }
-    if (targetPath === "/start/tillbyggnad" && projectType !== "tillbyggnad") {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Det här steget gäller bara för tillbyggnad.",
-      };
-    }
-    if (
-      targetPath === "/start/nybyggnation" &&
-      projectType !== "nybyggnation"
-    ) {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Det här steget gäller bara för nybyggnation.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/beskrivning") {
-    if (!projectType) {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Du behöver först välja projekttyp.",
-      };
-    }
-    if (!currentPhase) {
-      return {
-        allowed: false,
-        redirectTo: "/start/nulage",
-        reason: "Fyll i nuläge först.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/underlag") {
-    if (!projectType) {
-      return {
-        allowed: false,
-        redirectTo: "/start",
-        reason: "Välj projekttyp först.",
-      };
-    }
-    if (!currentPhase) {
-      return {
-        allowed: false,
-        redirectTo: "/start/nulage",
-        reason: "Fyll i nuläge först.",
-      };
-    }
-    const text = description?.rawText ?? "";
-    if (text.trim().length < 20) {
-      return {
-        allowed: false,
-        redirectTo: "/start/beskrivning",
-        reason:
-          "Beskriv projektet lite mer så entreprenörer förstår vad du vill göra.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/omfattning") {
-    const hasFiles = (data.files?.length ?? 0) > 0;
-    const hasDescription = (description?.rawText ?? "").trim().length >= 20;
-    if (!hasFiles && !hasDescription) {
-      return {
-        allowed: false,
-        redirectTo: "/start/underlag",
-        reason:
-          "Lägg till minst ett underlag eller skriv en kortare beskrivning.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/budget") {
-    if (!data.omfattning) {
-      return {
-        allowed: false,
-        redirectTo: "/start/omfattning",
-        reason: "Beskriv omfattningen innan du fyller i budget.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/tidplan") {
-    if (!data.budget || data.budget.intervalMin === undefined) {
-      return {
-        allowed: false,
-        redirectTo: "/start/budget",
-        reason: "Fyll i en ungefärlig budget innan tidplan.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  if (targetPath === "/start/sammanfattning") {
-    if (!data.tidplan?.startFrom && !data.tidplan?.startTo) {
-      return {
-        allowed: false,
-        redirectTo: "/start/tidplan",
-        reason: "Sätt ett ungefärligt startfönster innan sammanfattning.",
-      };
-    }
-    return { allowed: true };
-  }
-
-  return { allowed: true };
-}
-
-/**
- * Hitta nästa steg i wizard
+ * Hitta nästa steg i wizard.
  */
 export function getNextWizardStep(
-  currentPath: WizardStepPath
+  currentPath: string,
+  projectType: ProjectType
 ): WizardStepPath | null {
-  const currentIndex = WIZARD_STEP_ORDER.indexOf(currentPath);
+  const order = getWizardStepOrder(projectType);
+  const currentIndex = order.indexOf(currentPath as WizardStepPath);
   if (currentIndex === -1) return null;
   const nextIndex = currentIndex + 1;
-  if (nextIndex >= WIZARD_STEP_ORDER.length) return null;
-  return WIZARD_STEP_ORDER[nextIndex];
+  if (nextIndex >= order.length) return null;
+  return order[nextIndex];
 }
 
 /**
- * Hitta föregående steg i wizard
+ * Hitta föregående steg i wizard.
  */
 export function getPreviousWizardStep(
-  currentPath: WizardStepPath
+  currentPath: string,
+  projectType: ProjectType
 ): WizardStepPath | null {
-  const currentIndex = WIZARD_STEP_ORDER.indexOf(currentPath);
+  const order = getWizardStepOrder(projectType);
+  const currentIndex = order.indexOf(currentPath as WizardStepPath);
   if (currentIndex <= 0) return null;
-  return WIZARD_STEP_ORDER[currentIndex - 1];
+  return order[currentIndex - 1];
 }
 
 /**
- * Navigation hooks för wizard
+ * Navigation hooks för wizard.
  */
 export function useWizardNavigation() {
   const { navigate } = useSmoothNavigation();
 
   const goToNextStep = useCallback(
-    (currentPath: WizardStepPath) => {
-      const next = getNextWizardStep(currentPath);
-      if (next) navigate(next);
+    (currentPath: string, projectType: ProjectType) => {
+      const next = getNextWizardStep(currentPath, projectType);
+      if (next) {
+        navigate(next);
+      }
     },
     [navigate]
   );
 
   const goToPreviousStep = useCallback(
-    (currentPath: WizardStepPath) => {
-      const prev = getPreviousWizardStep(currentPath);
-      if (prev) navigate(prev);
+    (currentPath: string, projectType: ProjectType) => {
+      const prev = getPreviousWizardStep(currentPath, projectType);
+      if (prev) {
+        navigate(prev);
+      }
     },
     [navigate]
   );
 
   const goToStep = useCallback(
-    (path: WizardStepPath) => {
+    (path: string) => {
       navigate(path);
     },
     [navigate]
@@ -306,7 +229,7 @@ export function useWizardNavigation() {
 }
 
 /**
- * Exit wizard med bekräftelse
+ * Exit wizard med bekräftelse.
  */
 export function useWizardExit() {
   const router = useRouter();
@@ -323,216 +246,6 @@ export function useWizardExit() {
     },
     [router]
   );
-
-  return { exit };
-}
-
-/**
- * Routing Utilities
- * 
- * Hanterar smooth transitions och wizard state vid navigation
- */
-
-import { useRouter } from "next/navigation";
-import { useCallback } from "react";
-
-/**
- * Smooth navigation med fade effect
- */
-export function useSmoothNavigation() {
-  const router = useRouter();
-
-  const navigate = useCallback((path: string, delay = 300) => {
-    // Fade out
-    if (typeof document !== 'undefined') {
-      document.body.style.opacity = "0";
-      document.body.style.transition = "opacity 300ms ease-out";
-    }
-
-    // Navigate after fade
-    setTimeout(() => {
-      router.push(path);
-      
-      // Fade in på nästa sida (hanteras av layout)
-      if (typeof document !== 'undefined') {
-        setTimeout(() => {
-          document.body.style.opacity = "1";
-        }, 50);
-      }
-    }, delay);
-  }, [router]);
-
-  return { navigate };
-}
-
-/**
- * Route guards - kontrollera om användare kan komma åt sida
- */
-export function canAccessWizardStep(
-  targetPath: string,
-  completedSteps: string[] = [],
-  currentProjectType: string | null
-): { allowed: boolean; redirectTo?: string; reason?: string } {
-  // Exempel på logik:
-  
-  // Måste välja projekttyp först
-  if (targetPath.includes('/underlag') && !currentProjectType) {
-    return {
-      allowed: false,
-      redirectTo: '/start',
-      reason: 'Du måste välja projekttyp först'
-    };
-  }
-
-  // Kan alltid gå bakåt till tidigare steg
-  if (completedSteps.includes(targetPath)) {
-    return { allowed: true };
-  }
-
-  // Kan gå till nästa steg
-  return { allowed: true };
-}
-
-/**
- * Routing-regler per roll
- */
-export const ROLE_ROUTES = {
-  privat: {
-    landing: '/privatperson',
-    wizard: '/start',
-    dashboard: '/projekt', // Framtida
-  },
-  brf: {
-    landing: '/brf',
-    wizard: '/brf/start', // Framtida BRF-specific wizard
-    dashboard: '/brf/atgarder',
-  },
-  entreprenor: {
-    landing: '/entreprenor',
-    wizard: null, // Entreprenörer har ingen wizard
-    dashboard: '/entreprenor/projekt',
-  },
-  osaker: {
-    landing: '/start', // Går direkt till wizard
-    wizard: '/start',
-    dashboard: null,
-  },
-} as const;
-
-/**
- * Hämta rätt route baserat på roll
- */
-export function getRoleRoute(
-  role: keyof typeof ROLE_ROUTES,
-  type: 'landing' | 'wizard' | 'dashboard'
-): string | null {
-  return ROLE_ROUTES[role]?.[type] ?? null;
-}
-
-/**
- * Wizard step order och validering
- */
-export const WIZARD_STEP_ORDER = [
-  '/start',
-  '/start/nulage',
-  // Dynamiska steg baserat på projekttyp:
-  // - /start/renovering (om renovering)
-  // - /start/tillbyggnad (om tillbyggnad)  
-  // - /start/nybyggnation (om nybyggnation)
-  '/start/beskrivning',
-  '/start/underlag',
-  '/start/omfattning',
-  '/start/budget',
-  '/start/tidplan',
-  '/start/sammanfattning',
-] as const;
-
-export type WizardStepPath = (typeof WIZARD_STEP_ORDER)[number];
-
-/**
- * Hitta nästa steg i wizard
- */
-export function getNextWizardStep(
-  currentPath: WizardStepPath,
-  _projectType: string | null
-): string | null {
-  const currentIndex = WIZARD_STEP_ORDER.indexOf(currentPath);
-  if (currentIndex === -1) return null;
-
-  // Enkel logik - kan utökas med projekttyp-specifika regler
-  const nextIndex = currentIndex + 1;
-  if (nextIndex >= WIZARD_STEP_ORDER.length) return null;
-
-  return WIZARD_STEP_ORDER[nextIndex];
-}
-
-/**
- * Hitta föregående steg i wizard
- */
-export function getPreviousWizardStep(
-  currentPath: WizardStepPath
-): string | null {
-  const currentIndex = WIZARD_STEP_ORDER.indexOf(currentPath);
-  if (currentIndex <= 0) return null;
-
-  return WIZARD_STEP_ORDER[currentIndex - 1];
-}
-
-/**
- * Navigation hooks för wizard
- */
-export function useWizardNavigation() {
-  const { navigate } = useSmoothNavigation();
-
-  const goToNextStep = useCallback((currentPath: string, projectType: string | null) => {
-    const next = getNextWizardStep(currentPath, projectType);
-    if (next) {
-      navigate(next);
-    }
-  }, [navigate]);
-
-  const goToPreviousStep = useCallback((currentPath: string) => {
-    const prev = getPreviousWizardStep(currentPath);
-    if (prev) {
-      navigate(prev);
-    }
-  }, [navigate]);
-
-  const goToStep = useCallback((path: string) => {
-    navigate(path);
-  }, [navigate]);
-
-  return {
-    goToNextStep,
-    goToPreviousStep,
-    goToStep,
-  };
-}
-
-/**
- * Exit wizard med bekräftelse
- */
-export function useWizardExit() {
-  const router = useRouter();
-
-  const exit = useCallback((hasUnsavedChanges = false) => {
-    if (hasUnsavedChanges) {
-      const confirm = window.confirm(
-        'Du har osparade ändringar. Är du säker på att du vill avsluta?'
-      );
-      if (!confirm) return;
-    }
-
-    // Fade och navigera till start
-    if (typeof document !== 'undefined') {
-      document.body.style.opacity = "0";
-      document.body.style.transition = "opacity 300ms ease-out";
-    }
-
-    setTimeout(() => {
-      router.push('/');
-    }, 300);
-  }, [router]);
 
   return { exit };
 }

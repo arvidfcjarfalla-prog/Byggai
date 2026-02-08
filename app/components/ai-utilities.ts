@@ -133,9 +133,8 @@ export async function generateProjectSummary(data: WizardData): Promise<string> 
     parts.push(`Nuläge: ${data.currentPhase}`);
   }
   
-  const desc = data.description?.rawText ?? data.freeTextDescription;
-  if (desc) {
-    parts.push(`Beskrivning: ${desc.slice(0, 200)}`);
+  if (data.freeTextDescription) {
+    parts.push(`Beskrivning: ${data.freeTextDescription.slice(0, 200)}`);
   }
   
   if (data.budget) {
@@ -154,8 +153,8 @@ export async function generateProjectSummary(data: WizardData): Promise<string> 
  * Mock - ersätt med Claude API för bildanalys
  */
 export async function analyzeFile(file: File): Promise<{
-  suggestedTags: FileDoc["tags"];
-  suggestedRelatesTo?: FileDoc["relatesTo"];
+  suggestedTags: FileDoc['tags'];
+  suggestedRelatesTo?: FileDoc['relatesTo'];
   detectedContent: string[];
   confidence: number;
 }> {
@@ -165,8 +164,8 @@ export async function analyzeFile(file: File): Promise<{
   const fileType = file.type;
 
   // Simple heuristics
-  const suggestedTags: FileDoc["tags"] = [];
-  let suggestedRelatesTo: FileDoc["relatesTo"] | undefined;
+  const suggestedTags: FileDoc['tags'][] = [];
+  let suggestedRelatesTo: FileDoc['relatesTo'] | undefined;
   const detectedContent: string[] = [];
 
   if (fileName.includes('ritning') || fileName.includes('plan')) {
@@ -218,7 +217,7 @@ export function calculateCompleteness(data: WizardData): number {
     !!data.projectType,
     !!data.currentPhase,
     !!(data.renovering || data.tillbyggnad || data.nybyggnation || data.projectType === "annat"),
-    !!(data.description?.rawText || data.freeTextDescription),
+    !!data.freeTextDescription,
     !!(data.files && data.files.length > 0),
     !!data.omfattning,
     !!data.budget?.intervalMin,

@@ -6,6 +6,7 @@ import { Typewriter } from "./ui/typewriter";
 import { useWizard } from "./wizard-context";
 
 const ROLE_STORAGE_KEY = "byggplattformen-role";
+const ROOT_SEEN_IN_TAB_KEY = "byggplattformen-root-seen-in-tab";
 
 export type RoleId = "privat" | "brf" | "entreprenor" | "osaker";
 
@@ -29,7 +30,7 @@ const ROLES: {
     id: "privat",
     label: "Privatperson",
     subtitle: "Starta byggprojekt",
-    route: "/start", // Direkt till wizard
+    route: "/privatperson", // Gå först till landningssida
   },
   {
     id: "brf",
@@ -69,6 +70,31 @@ export function RoleIntro() {
   const [thinkingDots, setThinkingDots] = useState("");
   const [transitionText, setTransitionText] = useState("");
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const forceChooseRole = params.get("chooseRole") === "1";
+    if (forceChooseRole) {
+      sessionStorage.setItem(ROOT_SEEN_IN_TAB_KEY, "1");
+      return;
+    }
+
+    const seenRootInThisTab =
+      sessionStorage.getItem(ROOT_SEEN_IN_TAB_KEY) === "1";
+    if (!seenRootInThisTab) {
+      sessionStorage.setItem(ROOT_SEEN_IN_TAB_KEY, "1");
+      return;
+    }
+
+    const savedRole = localStorage.getItem(ROLE_STORAGE_KEY) as RoleId | null;
+    if (!savedRole) return;
+
+    const targetRoute = ROLES.find((r) => r.id === savedRole)?.route;
+    if (!targetRoute || targetRoute === "/") return;
+    router.replace(targetRoute);
+  }, [router]);
+
   // Thinking animation (tre prickar som pulserar)
   useEffect(() => {
     if (phase !== "thinking") return;
@@ -104,7 +130,7 @@ export function RoleIntro() {
         setPhase("transitioning");
         setTransitionText(TRANSITION_TEXTS[role]);
         
-        // Navigera efter kort transition utan att manipulera body-opacity
+        // Route efter transition
         setTimeout(() => {
           const target = ROLES.find((r) => r.id === role);
           if (target) {
@@ -293,6 +319,7 @@ export function RoleIntro() {
         .animate-fadeIn {
           animation: fadeIn 0.6s ease-out both;
         }
+
       `}</style>
     </main>
   );

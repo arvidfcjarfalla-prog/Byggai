@@ -448,57 +448,58 @@ function getProjectBrief(data: WizardData): ProjectBrief {
   };
 }
 
+function getResumeStep(restored: WizardData): number {
+  const config = getStepConfig(restored.projectType);
+  let step = 1;
+  if (restored.projectType) step = 2;
+  if (restored.currentPhase) step = 3;
+  if (restored.renovering || restored.tillbyggnad || restored.nybyggnation) step = 4;
+  if (restored.freeTextDescription) step = Math.max(step, 4);
+  if (restored.files !== undefined && (restored.files?.length ?? 0) > 0) step = Math.max(step, 5);
+  if (restored.omfattning) step = Math.max(step, 6);
+  if (restored.budget?.intervalMin !== undefined) step = Math.max(step, 7);
+  if (restored.tidplan?.startFrom) step = Math.max(step, 8);
+  return Math.min(step, config.length || 1);
+}
+
+function getInitialWizardState(): { data: WizardData; currentStep: number } {
+  if (typeof window === "undefined") {
+    return { data: initialData, currentStep: 1 };
+  }
+
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) {
+    return { data: initialData, currentStep: 1 };
+  }
+
+  const parsed = safeParse(saved);
+  if (!parsed || typeof parsed !== "object") {
+    return { data: initialData, currentStep: 1 };
+  }
+
+  const restored = parsed as WizardData;
+  let role = restored.userRole;
+  const storedRole = localStorage.getItem(ROLE_STORAGE_KEY);
+  if (storedRole && ["privat", "brf", "entreprenor", "osaker"].includes(storedRole)) {
+    role = storedRole as UserRole;
+  }
+
+  return {
+    data: { ...initialData, ...restored, userRole: role ?? restored.userRole },
+    currentStep: getResumeStep(restored),
+  };
+}
+
 export function WizardProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<WizardData>(initialData);
-  const [currentStep, setCurrentStep] = useState(1);
+  const [initialWizardState] = useState(getInitialWizardState);
+  const [data, setData] = useState<WizardData>(initialWizardState.data);
+  const [currentStep, setCurrentStep] = useState(initialWizardState.currentStep);
 
   const stepConfig = useMemo(
     () => getStepConfig(data.projectType),
     [data.projectType]
   );
   const totalSteps = stepConfig.length;
-
-  // Load saved state on mount
-  useEffect(() => {
-    const saved =
-      typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
-    if (!saved) return;
-
-    const parsed = safeParse(saved);
-    if (!parsed || typeof parsed !== "object") return;
-
-    const restored = parsed as WizardData;
-    let role = restored.userRole;
-    
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem(ROLE_STORAGE_KEY);
-      if (stored && ["privat", "brf", "entreprenor", "osaker"].includes(stored)) {
-        role = stored as UserRole;
-      }
-    }
-    
-    // Uppdatera state asynkront för att undvika kaskadrenderingar i effekt
-    window.setTimeout(() => {
-      setData({ ...initialData, ...restored, userRole: role ?? restored.userRole });
-    }, 0);
-
-    // Auto-resume logic
-    const config = getStepConfig(restored.projectType);
-    let step = 1;
-    if (restored.projectType) step = 2;
-    if (restored.currentPhase) step = 3;
-    if (restored.renovering || restored.tillbyggnad || restored.nybyggnation) step = 4;
-    if (restored.freeTextDescription) step = Math.max(step, 4);
-    if (restored.files !== undefined && (restored.files?.length ?? 0) > 0) step = Math.max(step, 5);
-    if (restored.omfattning) step = Math.max(step, 6);
-    if (restored.budget?.intervalMin !== undefined) step = Math.max(step, 7);
-    if (restored.tidplan?.startFrom) step = Math.max(step, 8);
-
-    // Sätt aktuellt steg asynkront för att undvika varningen om kaskadrenderingar
-    window.setTimeout(() => {
-      setCurrentStep(Math.min(step, config.length || 1));
-    }, 0);
-  }, []);
 
   // Auto-save to localStorage
   useEffect(() => {
@@ -633,17 +634,16 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
     setData((prev) => ({ ...prev, aiAnalysis: analysis }));
   }, [data, calculateProgress]);
 
-  // Quote Draft
   const projectBrief = useMemo(() => getProjectBrief(data), [data]);
 
+  // Quote Draft
   const createQuoteDraft = useCallback((): QuoteDraft => {
-    const currentBrief = getProjectBrief(data);
     const draft: QuoteDraft = {
       id: `quote-${Date.now()}`,
       createdAt: new Date().toISOString(),
       status: "draft",
       projectSnapshot: { ...data },
-      aiSummary: currentBrief.shortSummary,
+      aiSummary: projectBrief.shortSummary,
       metadata: {
         complexity: data.riskProfile?.level === "red" ? "high" : 
                    data.riskProfile?.level === "yellow" ? "medium" : "low",
@@ -653,7 +653,7 @@ export function WizardProvider({ children }: { children: React.ReactNode }) {
     
     setData((prev) => ({ ...prev, quoteDraft: draft }));
     return draft;
-  }, [data]);
+  }, [data, projectBrief]);
 
   const updateQuoteDraft = useCallback((updates: Partial<QuoteDraft>) => {
     setData((prev) => ({

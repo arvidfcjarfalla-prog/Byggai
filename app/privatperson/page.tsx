@@ -2,10 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { RoleSwitcher } from "../components/role-switcher";
+
+const ROLE_STORAGE_KEY = "byggplattformen-role";
 
 export default function PrivatpersonPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem(ROLE_STORAGE_KEY, "privat");
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -97,13 +104,13 @@ export default function PrivatpersonPage() {
 
           <div className="flex items-center gap-4">
             <Link
-              href="/konto"
+              href="/konto?role=privat"
               className="hidden rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white shadow-md outline-none transition-all duration-300 hover:bg-[#6B5A47] hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 md:inline-flex"
             >
               Skapa konto
             </Link>
             <Link
-              href="/login"
+              href="/login?role=privat"
               className="hidden text-sm font-medium text-[#766B60] outline-none transition-colors duration-300 hover:text-[#8C7860] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 md:inline-flex"
             >
               Logga in
@@ -125,6 +132,10 @@ export default function PrivatpersonPage() {
           </div>
         </div>
       </header>
+
+      <div className="mx-auto mt-4 max-w-7xl px-6 lg:px-8">
+        <RoleSwitcher current="privat" />
+      </div>
 
       {/* Side Menu */}
       {menuOpen && (
@@ -173,8 +184,8 @@ export default function PrivatpersonPage() {
             >
               {[
                 { href: "/start", label: "Initiera projekt" },
-                { href: "/konto", label: "Skapa konto" },
-                { href: "/", label: "Byt roll" },
+                { href: "/konto?role=privat", label: "Skapa konto" },
+                { href: "/?chooseRole=1", label: "Byt roll" },
                 { href: "#hur", label: "Så funkar det" },
                 { href: "#faq", label: "FAQ" },
               ].map((item, i) => (
