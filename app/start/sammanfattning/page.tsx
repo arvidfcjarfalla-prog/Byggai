@@ -32,6 +32,12 @@ export default function SammanfattningPage() {
   const risk = projectBrief.riskProfile;
   const openQuestions = projectBrief.openQuestions;
   const projectType = data.projectType;
+  const completionHref =
+    data.userRole === "brf"
+      ? "/brf"
+      : data.userRole === "entreprenor"
+        ? "/entreprenor"
+        : "/privatperson";
   const typeCrumb: Crumb | null =
     projectType && projectType !== "annat"
       ? {
@@ -240,7 +246,7 @@ export default function SammanfattningPage() {
               Dina val
             </h2>
             <dl className="grid gap-3 sm:grid-cols-2">
-              {stepConfig.map((step, idx) => {
+              {stepConfig.map((step) => {
                 const path = step.path;
                 const isCurrent = path === "/start/sammanfattning";
                 if (isCurrent) return null;
@@ -433,10 +439,10 @@ export default function SammanfattningPage() {
               Tillbaka
             </Link>
             <Link
-              href="/"
+              href={completionHref}
               className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
             >
-              Klar – till startsidan
+              Klar – till landningssidan
             </Link>
           </div>
         </div>

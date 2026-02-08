@@ -1,7 +1,8 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { Libre_Baskerville, Work_Sans } from "next/font/google";
-import { WizardProvider } from "./components/wizard-context";
+import { DevMenu } from "./components/dev-menu";
+import { Providers } from "./providers";
 
 const workSans = Work_Sans({
   subsets: ["latin"],
@@ -28,7 +29,10 @@ export default function RootLayout({
   return (
     <html lang="sv" className={`${workSans.variable} ${libre.variable}`}>
       <body className="font-sans bg-[#FAF8F5] text-[#2A2520] antialiased">
-        <WizardProvider>{children}</WizardProvider>
+        <Providers>
+          {children}
+          <DevMenu />
+        </Providers>
       </body>
     </html>
   );

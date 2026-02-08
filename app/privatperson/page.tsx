@@ -6,12 +6,12 @@ import { RoleSwitcher } from "../components/role-switcher";
 
 const ROLE_STORAGE_KEY = "byggplattformen-role";
 
-export default function BrfPage() {
+export default function PrivatpersonPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(ROLE_STORAGE_KEY, "brf");
+    localStorage.setItem(ROLE_STORAGE_KEY, "privat");
   }, []);
 
   useEffect(() => {
@@ -104,13 +104,13 @@ export default function BrfPage() {
 
           <div className="flex items-center gap-4">
             <Link
-              href="/konto?role=brf"
+              href="/konto?role=privat"
               className="hidden rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white shadow-md outline-none transition-all duration-300 hover:bg-[#6B5A47] hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 md:inline-flex"
             >
               Skapa konto
             </Link>
             <Link
-              href="/login?role=brf"
+              href="/login?role=privat"
               className="hidden text-sm font-medium text-[#766B60] outline-none transition-colors duration-300 hover:text-[#8C7860] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 md:inline-flex"
             >
               Logga in
@@ -134,7 +134,7 @@ export default function BrfPage() {
       </header>
 
       <div className="mx-auto mt-4 max-w-7xl px-6 lg:px-8">
-        <RoleSwitcher current="brf" />
+        <RoleSwitcher current="privat" />
       </div>
 
       {/* Side Menu */}
@@ -183,8 +183,8 @@ export default function BrfPage() {
               className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-6 text-sm"
             >
               {[
-                { href: "/brf/start", label: "Initiera BRF-projekt" },
-                { href: "/konto?role=brf", label: "Skapa konto" },
+                { href: "/start", label: "Initiera projekt" },
+                { href: "/konto?role=privat", label: "Skapa konto" },
                 { href: "/?chooseRole=1", label: "Byt roll" },
                 { href: "#hur", label: "Så funkar det" },
                 { href: "#faq", label: "FAQ" },
@@ -214,29 +214,31 @@ export default function BrfPage() {
             <div className="relative rounded-3xl border-2 border-[#E8E3DC] bg-white/95 p-8 shadow-2xl backdrop-blur-sm hover-lift md:p-12 lg:rounded-[2.5rem]">
               <div className="inline-flex items-center gap-2 rounded-full border border-[#CDB49B] bg-gradient-to-r from-[#CDB49B]/20 to-[#CDB49B]/5 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#8C7860] opacity-0 animate-fade-in-up">
                 <span className="h-1.5 w-1.5 rounded-full bg-[#8C7860]" />
-                För Bostadsrättsföreningar
+                Beslutsstöd · Tidigt skede
               </div>
 
               <h1 className="font-display mt-8 text-4xl font-bold leading-tight tracking-tight text-[#2A2520] opacity-0 animate-fade-in-up delay-100 md:text-5xl lg:text-6xl">
-                Planera{" "}
+                Initiera ditt
+                <br />
                 <span className="relative inline-block">
-                  <span className="relative z-10">åtgärder</span>
+                  <span className="relative z-10">byggprojekt</span>
                   <span className="absolute bottom-2 left-0 h-3 w-full bg-[#CDB49B]/30 -rotate-1" />
                 </span>
-                <br />
-                och upphandling.
+                .
               </h1>
 
               <p className="mt-6 text-lg leading-relaxed text-[#766B60] opacity-0 animate-fade-in-up delay-200 md:text-xl">
-                Strukturera era underhålls- och renoveringsprojekt. Skapa tydligt underlag för upphandling och få transparent beslutsordning från start till mål.
+                Svara på några frågor om nuläge och mål. Plattformen skapar en
+                första projektöversikt och föreslår nästa steg — strukturerat och
+                transparent.
               </p>
 
               <div className="mt-10 flex flex-col gap-4 opacity-0 animate-fade-in-up delay-300 sm:flex-row sm:items-center">
                 <Link
-                  href="/brf/start"
+                  href="/start"
                   className="group inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 sm:flex-none"
                 >
-                  Initiera BRF-projekt
+                  Initiera projekt
                   <svg
                     className="transition-transform duration-300 group-hover:translate-x-1"
                     width="16"
@@ -275,7 +277,7 @@ export default function BrfPage() {
                   <circle cx="8" cy="8" r="6" />
                   <path d="M8 5v3l2 2" />
                 </svg>
-                Neutral plattform utan leverantörsagenda. Transparent och spårbart.
+                Ingen inloggning i första steget. Du kan avbryta när som helst.
               </div>
             </div>
           </div>
@@ -287,25 +289,17 @@ export default function BrfPage() {
         <div className="mx-auto max-w-7xl">
           <div className="grid gap-6 md:grid-cols-3">
             {[
-              {
-                title: "Strukturerad planering",
-                desc: "Samla underlag, beslut och åtgärdsplan på ett ställe. Minska osäkerhet innan upphandling.",
-              },
-              {
-                title: "Transparent beslutsgång",
-                desc: "Tydlig ordning från idé till genomförande. Spårbara beslut och prioriteringar.",
-              },
-              {
-                title: "Bättre upphandling",
-                desc: "Komplett underlag ger bättre offerter och färre missförstånd under projekt.",
-              },
+              { title: "Strukturerat underlag", desc: "Samlar rätt info i rätt ordning – även utan ritningar." },
+              { title: "Sparar tid senare", desc: "Mindre fram-och-tillbaka när du väl går vidare." },
+              { title: "Transparens", desc: "Neutral logik, tydliga antaganden och spårbarhet." }
             ].map((item, idx) => (
-              <div
-                key={idx}
-                className="group rounded-3xl border border-[#E8E3DC] bg-white p-8 shadow-lg transition-all duration-300 hover:border-[#CDB49B] hover:shadow-xl hover-lift"
-              >
-                <h3 className="mb-3 text-lg font-bold text-[#2A2520]">{item.title}</h3>
-                <p className="text-sm leading-relaxed text-[#766B60]">{item.desc}</p>
+              <div key={idx} className="group rounded-3xl border border-[#E8E3DC] bg-white p-8 shadow-lg transition-all duration-300 hover:border-[#CDB49B] hover:shadow-xl hover-lift">
+                <h3 className="mb-3 text-lg font-bold text-[#2A2520]">
+                  {item.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-[#766B60]">
+                  {item.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -313,7 +307,11 @@ export default function BrfPage() {
       </section>
 
       {/* How it works */}
-      <section id="hur" aria-labelledby="hur-title" className="scroll-mt-28 px-6 py-20">
+      <section
+        id="hur"
+        aria-labelledby="hur-title"
+        className="scroll-mt-28 px-6 py-20"
+      >
         <div className="mx-auto max-w-7xl">
           <div className="mb-14 text-center">
             <h2
@@ -323,7 +321,8 @@ export default function BrfPage() {
               Så funkar det
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-[#766B60]">
-              Från utredning till upphandling med struktur och transparens.
+              Du beskriver nuläget. Plattformen skapar struktur och visar vilket
+              beslut som bör tas härnäst.
             </p>
           </div>
 
@@ -331,18 +330,18 @@ export default function BrfPage() {
             {[
               {
                 n: 1,
-                title: "Beskriv åtgärden",
-                desc: "Välj typ av projekt: underhåll, renovering, fasad, stambyte eller upphandling.",
+                title: "Nuläge & underlag",
+                desc: "Välj var du är i skedet: idé, skiss eller ritningar.",
               },
               {
                 n: 2,
-                title: "Samla underlag",
-                desc: "Ladda upp handlingar, beslut och beskrivningar. Plattformen skapar struktur.",
+                title: "Avgränsa projektet",
+                desc: "Omfattning, mål och osäkerheter – tydligt och spårbart.",
               },
               {
                 n: 3,
-                title: "Skapa åtgärdsplan",
-                desc: "Få en översikt med beslutsgång, tidplan och nästa steg för upphandling.",
+                title: "Få en översikt",
+                desc: "Sammanfattning + rekommenderad ordning för nästa steg.",
               },
             ].map((s) => (
               <li key={s.n} className="group relative">
@@ -354,8 +353,12 @@ export default function BrfPage() {
                     </div>
                     <div className="h-px flex-1 bg-gradient-to-r from-[#CDB49B] to-transparent" />
                   </div>
-                  <h3 className="mb-3 text-xl font-bold text-[#2A2520]">{s.title}</h3>
-                  <p className="leading-relaxed text-[#766B60]">{s.desc}</p>
+                  <h3 className="mb-3 text-xl font-bold text-[#2A2520]">
+                    {s.title}
+                  </h3>
+                  <p className="leading-relaxed text-[#766B60]">
+                    {s.desc}
+                  </p>
                 </div>
               </li>
             ))}
@@ -363,10 +366,10 @@ export default function BrfPage() {
 
           <div className="mt-14 text-center">
             <Link
-              href="/dashboard/brf/underhallsplan"
+              href="/start"
               className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
             >
-              Skapa åtgärdsplan
+              Skapa projektöversikt
               <svg
                 className="transition-transform duration-300 group-hover:translate-x-1"
                 width="16"
@@ -386,57 +389,12 @@ export default function BrfPage() {
         </div>
       </section>
 
-      {/* Value props */}
-      <section
-        id="varfor"
-        aria-labelledby="varfor-title"
-        className="scroll-mt-28 border-y border-[#E8E3DC] bg-white px-6 py-20"
-      >
-        <div className="mx-auto max-w-7xl">
-          <div className="mb-14 text-center">
-            <h2
-              id="varfor-title"
-              className="font-display text-3xl font-bold tracking-tight text-[#2A2520] md:text-4xl lg:text-5xl"
-            >
-              Varför börja med struktur
-            </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-[#766B60]">
-              Spara tid, pengar och föreningens resurser genom bättre planering.
-            </p>
-          </div>
-
-          <div className="grid gap-8 lg:grid-cols-3">
-            {[
-              {
-                title: "Undvik överraskningar",
-                desc: "Tydligt scope och realistiska budgetar från start minskar konflikter under genomförande.",
-              },
-              {
-                title: "Bättre styrelsearbete",
-                desc: "Transparent beslutsordning och dokumentation underlättar för både nuvarande och framtida styrelser.",
-              },
-              {
-                title: "Högre kvalitet",
-                desc: "Entreprenörer får bättre underlag vilket ger mer exakta offerter och färre ändringar.",
-              },
-            ].map((b) => (
-              <div
-                key={b.title}
-                className="group relative overflow-hidden rounded-3xl border-2 border-[#E8E3DC] bg-gradient-to-br from-white to-[#FAF8F5] p-10 shadow-lg transition-all duration-300 hover:border-[#CDB49B] hover-lift"
-              >
-                <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-[#CDB49B]/20 to-transparent blur-2xl transition-opacity duration-300 group-hover:opacity-0" />
-                <div className="relative">
-                  <h3 className="mb-3 text-xl font-bold text-[#2A2520]">{b.title}</h3>
-                  <p className="leading-relaxed text-[#766B60]">{b.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* FAQ */}
-      <section id="faq" aria-labelledby="faq-title" className="scroll-mt-28 px-6 py-20">
+      <section
+        id="faq"
+        aria-labelledby="faq-title"
+        className="scroll-mt-28 px-6 py-20"
+      >
         <div className="mx-auto max-w-4xl">
           <div className="mb-14 text-center">
             <h2
@@ -450,16 +408,16 @@ export default function BrfPage() {
           <ul className="space-y-4">
             {[
               {
-                q: "Är plattformen anpassad för föreningar?",
-                a: "Ja, flödet är byggt för kollektiva beslut med tydlig dokumentation och spårbarhet som passar föreningsarbete.",
+                q: "Är det här en offerttjänst?",
+                a: "Nej. Det här är ett beslutsstöd i tidiga skeden. Målet är att minska felbeslut och skapa bättre underlag innan man tar in offerter.",
               },
               {
-                q: "Kan flera i styrelsen samarbeta?",
-                a: "Ja, ni kan bjuda in kollegor och fördela ansvar. Alla ändringar loggas för transparens.",
+                q: "Måste jag ha ritningar?",
+                a: "Nej. Du kan börja med idé/skiss. Plattformen visar vad som saknas och vad som är rimligt som nästa steg.",
               },
               {
-                q: "Kostar det något?",
-                a: "Grundfunktionen är fri att använda. Betalkonton för föreningar med fler funktioner kommer senare.",
+                q: "Ger ni bindande besked om bygglov?",
+                a: "Nej. Plattformen ger struktur och vägledning och visar vad som bör kontrolleras. Kommunen fattar beslut.",
               },
             ].map((item) => (
               <li key={item.q}>
@@ -485,7 +443,9 @@ export default function BrfPage() {
                       </svg>
                     </span>
                   </summary>
-                  <p className="mt-4 leading-relaxed text-[#766B60]">{item.a}</p>
+                  <p className="mt-4 leading-relaxed text-[#766B60]">
+                    {item.a}
+                  </p>
                 </details>
               </li>
             ))}
@@ -500,9 +460,8 @@ export default function BrfPage() {
             <div>© 2026 Byggplattformen · Alla rättigheter förbehållna</div>
             <div className="flex gap-6">
               <a href="#hur" className="hover:text-[#8C7860]">Så funkar det</a>
-              <a href="#varfor" className="hover:text-[#8C7860]">Varför detta</a>
               <a href="#faq" className="hover:text-[#8C7860]">FAQ</a>
-              <Link href="/dashboard/brf/underhallsplan" className="hover:text-[#8C7860]">Kom igång</Link>
+              <Link href="/start" className="hover:text-[#8C7860]">Kom igång</Link>
             </div>
           </div>
         </div>

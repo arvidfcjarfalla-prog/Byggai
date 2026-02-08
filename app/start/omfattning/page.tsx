@@ -19,14 +19,6 @@ export default function OmfattningPage() {
   );
 
   const projectType = data.projectType;
-  const typePath =
-    projectType === "renovering"
-      ? "/start/renovering"
-      : projectType === "tillbyggnad"
-        ? "/start/tillbyggnad"
-        : projectType === "nybyggnation"
-          ? "/start/nybyggnation"
-          : "/start/underlag";
   const typeCrumb: Crumb | null =
     projectType && projectType !== "annat"
       ? {
