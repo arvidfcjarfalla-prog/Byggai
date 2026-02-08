@@ -37,7 +37,7 @@ export function SignupForm() {
     }
     const storedRole = localStorage.getItem(ROLE_STORAGE_KEY);
     if (storedRole && VALID_ROLES.has(storedRole as UserRole)) {
-      return storedRole;
+      return storedRole as UserRole;
     }
     return "privat";
   });

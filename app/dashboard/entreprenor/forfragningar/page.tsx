@@ -2,25 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { EntrepreneurRequest } from "../../../lib/procurement";
 import { useAuth } from "../../../components/auth-context";
 import { DashboardShell } from "../../../components/dashboard-shell";
+import { listRequests, subscribeRequests, type PlatformRequest } from "../../../lib/requests-store";
 import {
-  PROCUREMENT_REQUESTS_KEY,
-  PROCUREMENT_UPDATED_EVENT,
-} from "../../../lib/procurement";
-
-function readProcurementRequests(): EntrepreneurRequest[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(PROCUREMENT_REQUESTS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as EntrepreneurRequest[]) : [];
-  } catch {
-    return [];
-  }
-}
+  formatSnapshotBudget,
+  formatSnapshotTimeline,
+  toSwedishRiskLabel,
+} from "../../../lib/project-snapshot";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -40,8 +29,8 @@ export default function EntreprenorForfragningarPage() {
   const router = useRouter();
   const { user, ready } = useAuth();
   const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
-  const [incomingRequests, setIncomingRequests] = useState<EntrepreneurRequest[]>(
-    () => readProcurementRequests()
+  const [incomingRequests, setIncomingRequests] = useState<PlatformRequest[]>(
+    () => listRequests()
   );
 
   useEffect(() => {
@@ -60,15 +49,9 @@ export default function EntreprenorForfragningarPage() {
   }, [ready, router, user]);
 
   useEffect(() => {
-    const updateFromStorage = () => {
-      setIncomingRequests(readProcurementRequests());
-    };
-    window.addEventListener("storage", updateFromStorage);
-    window.addEventListener(PROCUREMENT_UPDATED_EVENT, updateFromStorage);
-    return () => {
-      window.removeEventListener("storage", updateFromStorage);
-      window.removeEventListener(PROCUREMENT_UPDATED_EVENT, updateFromStorage);
-    };
+    return subscribeRequests(() => {
+      setIncomingRequests(listRequests());
+    });
   }, []);
 
   if (!ready) {
@@ -86,13 +69,19 @@ export default function EntreprenorForfragningarPage() {
   if (!user) return null;
 
   const latestRequest = incomingRequests[0] ?? null;
+  const latestSnapshot = latestRequest?.snapshot ?? null;
   const latestFiles = latestRequest?.files ?? [];
+  const latestActions = latestRequest?.actions ?? latestRequest?.scope.actions ?? [];
+  const audienceLabel =
+    latestRequest?.audience === "privat" ? "Privatperson" : "BRF";
+  const riskLabel =
+    latestSnapshot ? toSwedishRiskLabel(latestSnapshot.riskProfile.level) : latestRequest?.riskProfile;
 
   return (
     <DashboardShell
       roleLabel="Entreprenör"
       heading="Inkomna projektförfrågningar"
-      subheading="Här hanterar du förfrågningar från BRF med komplett underlag för offertarbete."
+      subheading="Här hanterar du snapshot-baserade förfrågningar från BRF och privatpersoner med samma underlagsstruktur."
       startProjectHref="/dashboard/entreprenor/forfragningar"
       startProjectLabel="Se förfrågningar"
       navItems={[
@@ -104,7 +93,7 @@ export default function EntreprenorForfragningarPage() {
       {!latestRequest && (
         <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
           <p className="text-sm text-[#766B60]">
-            Inga förfrågningar ännu. När BRF skickar förfrågan dyker den upp här.
+            Inga förfrågningar ännu. När BRF eller privatperson skickar dyker de upp här.
           </p>
         </section>
       )}
@@ -113,13 +102,13 @@ export default function EntreprenorForfragningarPage() {
         <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center gap-3">
             <span className="rounded-full bg-[#8C7860] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white">
-              Ny förfrågan från BRF
+              Ny förfrågan från {audienceLabel}
             </span>
             <span className="rounded-full border border-[#CDB49B] bg-[#CDB49B]/10 px-3 py-1 text-xs font-semibold text-[#6B5A47]">
               Matchscore: 93%
             </span>
             <span className="text-xs font-semibold text-[#766B60]">
-              Inläst från BRF-upload · {formatDate(latestRequest.createdAt)}
+              Inläst från RequestSnapshot · {formatDate(latestRequest.createdAt)}
             </span>
           </div>
 
@@ -127,15 +116,28 @@ export default function EntreprenorForfragningarPage() {
             {latestRequest.title} ({latestRequest.location})
           </h2>
           <p className="mt-2 max-w-4xl text-sm leading-relaxed text-[#766B60]">
-            Beställaren har skickat {latestRequest.actions.length} åtgärder från underhållsplanen för offertförfrågan.
+            Beställaren har skickat {latestActions.length} åtgärder i ett låst snapshot-underlag.
           </p>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             {[
-              { label: "Budgetspann", value: latestRequest.budgetRange },
-              { label: "Önskad start", value: latestRequest.desiredStart },
-              { label: "Underlagsnivå", value: latestRequest.documentationLevel },
-              { label: "Riskprofil", value: latestRequest.riskProfile },
+              {
+                label: "Budgetspann",
+                value: latestSnapshot
+                  ? formatSnapshotBudget(latestSnapshot)
+                  : latestRequest.budgetRange,
+              },
+              {
+                label: "Önskad start",
+                value: latestSnapshot
+                  ? formatSnapshotTimeline(latestSnapshot)
+                  : latestRequest.desiredStart,
+              },
+              {
+                label: "Underlagsnivå",
+                value: `${latestRequest.completeness}% komplett`,
+              },
+              { label: "Riskprofil", value: riskLabel || latestRequest.riskProfile },
             ].map((item) => (
               <div key={item.label} className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
                 <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
@@ -144,6 +146,48 @@ export default function EntreprenorForfragningarPage() {
                 <p className="mt-1 text-sm font-semibold text-[#2A2520]">{item.value}</p>
               </div>
             ))}
+          </div>
+
+          {latestSnapshot && (
+            <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_1fr]">
+              <article className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Riskorsaker
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
+                  {latestSnapshot.riskProfile.reasons.map((reason) => (
+                    <li key={reason}>• {reason}</li>
+                  ))}
+                </ul>
+              </article>
+
+              <article className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Rekommenderade nästa steg
+                </p>
+                <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
+                  {latestSnapshot.riskProfile.recommendedNextSteps.map((step) => (
+                    <li key={step}>• {step}</li>
+                  ))}
+                </ul>
+              </article>
+            </div>
+          )}
+
+          <div className="mt-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+              Saknas i underlaget
+            </p>
+            {latestRequest.missingInfo.length === 0 && (
+              <p className="mt-2 text-sm text-[#2A2520]">Inga kritiska luckor identifierade.</p>
+            )}
+            {latestRequest.missingInfo.length > 0 && (
+              <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
+                {latestRequest.missingInfo.map((item) => (
+                  <li key={item}>• {item}</li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {latestRequest.propertySnapshot && (
@@ -212,7 +256,7 @@ export default function EntreprenorForfragningarPage() {
                   Dokumentunderlag
                 </p>
                 <p className="mt-2 text-2xl font-bold text-[#2A2520]">
-                  {latestRequest.documentSummary?.totalFiles ?? latestFiles.length} filer
+                  {latestSnapshot?.files.length ?? latestRequest.documentSummary?.totalFiles ?? latestFiles.length} filer
                 </p>
                 {latestRequest.documentSummary?.highlights &&
                   latestRequest.documentSummary.highlights.length > 0 && (
@@ -224,7 +268,22 @@ export default function EntreprenorForfragningarPage() {
                       ))}
                     </ul>
                   )}
-                {latestFiles.length > 0 && (
+                {latestSnapshot && latestSnapshot.files.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-[#E8E3DC] bg-white p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                      Filtyper och taggar (snapshot)
+                    </p>
+                    <ul className="mt-2 space-y-1.5 text-xs text-[#2A2520]">
+                      {latestSnapshot.files.slice(0, 8).map((file) => (
+                        <li key={file.id}>
+                          <span className="font-semibold">{file.type}:</span> {file.name}
+                          {file.tags.length > 0 ? ` [${file.tags.join(", ")}]` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {!latestSnapshot && latestFiles.length > 0 && (
                   <div className="mt-3 rounded-xl border border-[#E8E3DC] bg-white p-3">
                     <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
                       Senaste filer
@@ -248,7 +307,7 @@ export default function EntreprenorForfragningarPage() {
               Åtgärder i förfrågan
             </p>
             <div className="mt-3 space-y-3">
-              {latestRequest.actions.map((action) => {
+              {latestActions.map((action) => {
                 const isOpen = expandedActionId === action.id;
                 return (
                   <article

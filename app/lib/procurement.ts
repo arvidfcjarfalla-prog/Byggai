@@ -1,74 +1,36 @@
-export interface ProcurementActionDetail {
-  label: string;
-  value: string;
+import {
+  listRequests,
+  replaceRequests,
+  REQUESTS_STORAGE_KEY,
+  REQUESTS_UPDATED_EVENT,
+  saveRequest,
+  type PlatformRequest,
+} from "./requests-store";
+
+export type {
+  PlatformRequest as EntrepreneurRequest,
+  ProcurementAction,
+  ProcurementActionDetail,
+  RequestDocumentSummary,
+  RequestDocumentSummaryItem,
+  RequestFileRecord,
+  RequestPropertySnapshot,
+  RequestScopeItem,
+  RequestAudience,
+  RequestStatus,
+} from "./requests-store";
+
+export const PROCUREMENT_REQUESTS_KEY = REQUESTS_STORAGE_KEY;
+export const PROCUREMENT_UPDATED_EVENT = REQUESTS_UPDATED_EVENT;
+
+export function readProcurementRequests(): PlatformRequest[] {
+  return listRequests();
 }
 
-export interface RequestPropertySnapshot {
-  audience: "brf" | "privat";
-  title: string;
-  address: string;
-  buildingYear?: string;
-  apartmentsCount?: string;
-  buildingsCount?: string;
-  areaSummary?: string;
-  occupancy?: string;
-  accessAndLogistics?: string;
-  knownConstraints?: string;
-  contactName?: string;
-  contactEmail?: string;
-  contactPhone?: string;
+export function writeProcurementRequests(requests: PlatformRequest[]): PlatformRequest[] {
+  return replaceRequests(requests);
 }
 
-export interface RequestDocumentSummaryItem {
-  typeLabel: string;
-  count: number;
+export function prependProcurementRequest(request: PlatformRequest): PlatformRequest[] {
+  return saveRequest(request);
 }
-
-export interface RequestDocumentSummary {
-  totalFiles: number;
-  byType: RequestDocumentSummaryItem[];
-  highlights: string[];
-}
-
-export interface RequestFileRecord {
-  name: string;
-  fileTypeLabel: string;
-  extension: string;
-  sizeKb: number;
-  uploadedAt: string;
-  sourceLabel: string;
-}
-
-export interface ProcurementAction {
-  id: string;
-  title: string;
-  category: string;
-  status: "Planerad" | "Eftersatt" | "Genomförd";
-  plannedYear: number;
-  estimatedPriceSek: number;
-  emissionsKgCo2e: number;
-  source?: "ai" | "local";
-  details?: string;
-  rawRow?: string;
-  sourceSheet?: string;
-  sourceRow?: number;
-  extraDetails?: ProcurementActionDetail[];
-}
-
-export interface EntrepreneurRequest {
-  id: string;
-  createdAt: string;
-  title: string;
-  location: string;
-  budgetRange: string;
-  desiredStart: string;
-  documentationLevel: string;
-  riskProfile: "Låg" | "Medel" | "Hög";
-  actions: ProcurementAction[];
-  propertySnapshot?: RequestPropertySnapshot;
-  documentSummary?: RequestDocumentSummary;
-  files?: RequestFileRecord[];
-}
-
-export const PROCUREMENT_REQUESTS_KEY = "byggplattformen-procurement-requests";
-export const PROCUREMENT_UPDATED_EVENT = "byggplattformen-procurement-updated";

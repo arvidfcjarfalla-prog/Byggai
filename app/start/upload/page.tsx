@@ -4,17 +4,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type {
-  EntrepreneurRequest,
+  PlatformRequest,
   ProcurementAction,
   ProcurementActionDetail,
   RequestDocumentSummary,
   RequestFileRecord,
   RequestPropertySnapshot,
-} from "../../lib/procurement";
-import {
-  PROCUREMENT_REQUESTS_KEY,
-  PROCUREMENT_UPDATED_EVENT,
-} from "../../lib/procurement";
+} from "../../lib/requests-store";
+import { saveRequest } from "../../lib/requests-store";
 import type { BrfFileRecord } from "../../lib/brf-workspace";
 import {
   BRF_FILES_KEY,
@@ -30,6 +27,17 @@ import {
   readStoredObject,
   toAddress,
 } from "../../lib/workspace-profiles";
+import {
+  buildProjectSnapshotFromBrfSeed,
+  formatSnapshotBudget,
+  formatSnapshotTimeline,
+  toSwedishRiskLabel,
+} from "../../lib/project-snapshot";
+import {
+  fromProcurementAction,
+  writeBrfActionsDraft,
+  writeBrfRequestMeta,
+} from "../../lib/brf-start";
 
 const FALLBACK_ACTIONS = [
   "Byta belysningsarmatur LED i trapphus",
@@ -410,7 +418,7 @@ async function extractActions(file: File): Promise<ProcurementAction[]> {
   }
 
   const baseYear = 2026;
-  const sourceRows =
+  const sourceRows: ParsedRow[] =
     parsedRows.length > 0
       ? parsedRows.slice(0, 30)
       : titles.map((title) => ({
@@ -453,18 +461,6 @@ async function extractActions(file: File): Promise<ProcurementAction[]> {
       extraDetails: row.extraDetails,
     };
   });
-}
-
-function readRequests(): EntrepreneurRequest[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(PROCUREMENT_REQUESTS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as EntrepreneurRequest[]) : [];
-  } catch {
-    return [];
-  }
 }
 
 function readBrfFiles(): BrfFileRecord[] {
@@ -674,11 +670,23 @@ export function BrfUploadWorkspace({
       }));
       setActions(normalized);
       setSelectedActionIds(normalized.map((item) => item.id));
+      writeBrfActionsDraft(normalized.map(fromProcurementAction));
+      writeBrfRequestMeta({
+        startMode: "underhallsplan",
+        title: requestTitle.trim() || "BRF underhållsprojekt",
+        description: `${normalized.length} extraherade åtgärder från underhållsplan.`,
+      });
       setExtractNotice("AI-extraktion klar. Granska listan och skicka förfrågan.");
     } catch (error) {
       const extracted = await extractActions(file);
       setActions(extracted);
       setSelectedActionIds(extracted.map((item) => item.id));
+      writeBrfActionsDraft(extracted.map(fromProcurementAction));
+      writeBrfRequestMeta({
+        startMode: "underhallsplan",
+        title: requestTitle.trim() || "BRF underhållsprojekt",
+        description: `${extracted.length} extraherade åtgärder från underhållsplan.`,
+      });
       setExtractNotice(
         `AI-extraktion kunde inte användas just nu (${error instanceof Error ? error.message : "okänt fel"}). Visar lokal fallback-lista.`
       );
@@ -720,28 +728,79 @@ export function BrfUploadWorkspace({
       contactEmail: profile.procurementEmail,
       contactPhone: profile.procurementPhone,
     };
+    const plannedYears = selected
+      .map((action) => action.plannedYear)
+      .filter((year): year is number => Number.isFinite(year));
+    const earliestYear = plannedYears.length > 0 ? Math.min(...plannedYears) : undefined;
+    const snapshot = buildProjectSnapshotFromBrfSeed({
+      title: requestTitle.trim() || "BRF underhållsprojekt",
+      location:
+        toAddress([profile.addressLine, `${profile.postalCode} ${profile.city}`]) ||
+        "Stockholm",
+      description: `${selected.length} åtgärder markerade för offertförfrågan.`,
+      actions: selected,
+      files: requestFiles.map((record) => ({
+        id: record.id,
+        name: record.name,
+        type: getFileTypeLabel(record.fileType),
+        size: Math.round(record.sizeKb * 1024),
+        tags: [getFileTypeLabel(record.fileType), record.sourceLabel],
+      })),
+      desiredStartFrom: earliestYear ? `${earliestYear}-04-01` : undefined,
+      desiredStartTo: earliestYear ? `${earliestYear}-09-30` : undefined,
+      projectSpecific: {
+        apartmentsCount: profile.apartmentsCount,
+        buildingsCount: profile.buildingsCount,
+        boaM2: profile.boaM2,
+        loaM2: profile.loaM2,
+      },
+    });
 
-    const nextRequest: EntrepreneurRequest = {
+    const nextRequest: PlatformRequest = {
       id: `req-${Date.now()}`,
       createdAt: new Date().toISOString(),
-      title: requestTitle.trim() || "BRF underhållsprojekt",
-      location: "Stockholm",
-      budgetRange: "1,8–3,5 MSEK",
-      desiredStart: "Q2–Q3 2026",
+      audience: "brf",
+      status: "sent",
+      requestType: "offer_request_v1",
+      snapshot,
+      title: snapshot.overview.title,
+      location: snapshot.overview.location || "Stockholm",
+      budgetRange: formatSnapshotBudget(snapshot),
+      desiredStart: formatSnapshotTimeline(snapshot),
+      scope: {
+        actions: selected,
+        scopeItems: selected.map((action) => ({ title: action.title, details: action.details })),
+      },
+      completeness: snapshot.completenessScore,
+      missingInfo: [
+        ...(requestFiles.length === 0 ? ["Inga bilagor uppladdade."] : []),
+        ...(profile.procurementContact.trim().length === 0 ? ["Kontaktperson saknas."] : []),
+      ],
       documentationLevel: file ? `Underhållsplan uppladdad: ${file.name}` : "Skiss/plan",
-      riskProfile: selected.some((a) => a.status === "Eftersatt") ? "Medel" : "Låg",
+      riskProfile: toSwedishRiskLabel(snapshot.riskProfile.level),
       actions: selected,
       propertySnapshot,
       documentSummary: buildDocumentSummary(requestFiles),
       files: mapFilesForRequest(requestFiles),
     };
 
-    const existing = readRequests();
-    localStorage.setItem(
-      PROCUREMENT_REQUESTS_KEY,
-      JSON.stringify([nextRequest, ...existing])
-    );
-    window.dispatchEvent(new Event(PROCUREMENT_UPDATED_EVENT));
+    writeBrfActionsDraft(selected.map(fromProcurementAction));
+    writeBrfRequestMeta({
+      startMode: "underhallsplan",
+      title: snapshot.overview.title,
+      description: snapshot.overview.description,
+      location: snapshot.overview.location,
+      desiredStartFrom: snapshot.timeline.desiredStartFrom,
+      desiredStartTo: snapshot.timeline.desiredStartTo,
+      flexibleStart: snapshot.timeline.flexibility === "flexible",
+      budgetMinSek: snapshot.budget.min,
+      budgetMaxSek: snapshot.budget.max,
+      contactName: profile.procurementContact,
+      contactEmail: profile.procurementEmail,
+      contactPhone: profile.procurementPhone,
+      budgetUnknown: snapshot.budget.min == null && snapshot.budget.max == null,
+    });
+    saveRequest(nextRequest);
     setSentCount((c) => c + 1);
   };
 

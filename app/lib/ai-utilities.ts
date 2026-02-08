@@ -4,7 +4,7 @@
  * Mock implementations för nu - kan ersättas med verklig Claude API
  */
 
-import type { FileDoc, WizardData, QuoteDraft } from "./wizard-context";
+import type { FileDoc, QuoteDraft, WizardData } from "../components/wizard-context";
 
 // ============================================================================
 // AI ANALYSIS
@@ -133,7 +133,7 @@ export async function generateProjectSummary(data: WizardData): Promise<string> 
     parts.push(`Nuläge: ${data.currentPhase}`);
   }
   
-  const desc = data.description?.rawText ?? data.freeTextDescription;
+  const desc = data.freeTextDescription;
   if (desc) {
     parts.push(`Beskrivning: ${desc.slice(0, 200)}`);
   }
@@ -218,7 +218,7 @@ export function calculateCompleteness(data: WizardData): number {
     !!data.projectType,
     !!data.currentPhase,
     !!(data.renovering || data.tillbyggnad || data.nybyggnation || data.projectType === "annat"),
-    !!(data.description?.rawText || data.freeTextDescription),
+    !!data.freeTextDescription,
     !!(data.files && data.files.length > 0),
     !!data.omfattning,
     !!data.budget?.intervalMin,

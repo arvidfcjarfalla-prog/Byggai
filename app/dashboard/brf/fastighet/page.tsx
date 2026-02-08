@@ -4,9 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
-import type { ProcurementAction, ProcurementActionDetail } from "../../../lib/procurement";
+import type {
+  EntrepreneurRequest,
+  ProcurementAction,
+  ProcurementActionDetail,
+} from "../../../lib/procurement";
 import {
   PROCUREMENT_REQUESTS_KEY,
+  readProcurementRequests,
   PROCUREMENT_UPDATED_EVENT,
 } from "../../../lib/procurement";
 import type { BrfFileRecord, BrfFileType } from "../../../lib/brf-workspace";
@@ -27,16 +32,17 @@ import {
   toAddress,
   writeStoredObject,
 } from "../../../lib/workspace-profiles";
+import {
+  formatSnapshotBudget,
+  formatSnapshotTimeline,
+  PROJECT_SNAPSHOT_KEY,
+  PROJECT_SNAPSHOT_UPDATED_EVENT,
+  readProjectSnapshotFromStorage,
+  toSwedishRiskLabel,
+  type ProjectSnapshot,
+} from "../../../lib/project-snapshot";
 
 type PropertyTab = "overview" | "components" | "files";
-
-type LocalRequest = {
-  id: string;
-  createdAt: string;
-  title: string;
-  documentationLevel: string;
-  actions: ProcurementAction[];
-};
 
 type ComponentRow = {
   id: string;
@@ -150,18 +156,6 @@ function formatInteger(value: string): string {
   }).format(numeric);
 }
 
-function readRequests(): LocalRequest[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(PROCUREMENT_REQUESTS_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as LocalRequest[]) : [];
-  } catch {
-    return [];
-  }
-}
-
 function readBrfFiles(): BrfFileRecord[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(BRF_FILES_KEY);
@@ -222,8 +216,13 @@ export default function BrfFastighetPage() {
 
   const [tab, setTab] = useState<PropertyTab>("overview");
   const [isEditing, setIsEditing] = useState(false);
-  const [requests, setRequests] = useState<LocalRequest[]>(() => readRequests());
+  const [requests, setRequests] = useState<EntrepreneurRequest[]>(() =>
+    readProcurementRequests()
+  );
   const [files, setFiles] = useState<BrfFileRecord[]>(() => readBrfFiles());
+  const [projectSnapshot, setProjectSnapshot] = useState<ProjectSnapshot | null>(() =>
+    readProjectSnapshotFromStorage()
+  );
   const [profile, setProfile] = useState<BrfPropertyProfile>(() => readProfile());
   const [draftProfile, setDraftProfile] = useState<BrfPropertyProfile>(() => readProfile());
 
@@ -246,39 +245,49 @@ export default function BrfFastighetPage() {
   }, [ready, router, user]);
 
   useEffect(() => {
-    const onRequests = () => setRequests(readRequests());
+    const onRequests = () => setRequests(readProcurementRequests());
     const onFiles = () => setFiles(readBrfFiles());
     const onProfile = () => setProfile(readProfile());
+    const onSnapshot = () => setProjectSnapshot(readProjectSnapshotFromStorage());
 
     const onStorage = (event: StorageEvent) => {
       if (!event.key) return;
       if (event.key === PROCUREMENT_REQUESTS_KEY) onRequests();
       if (event.key === BRF_FILES_KEY) onFiles();
       if (event.key === BRF_PROPERTY_PROFILE_KEY) onProfile();
+      if (event.key === PROJECT_SNAPSHOT_KEY) onSnapshot();
     };
 
     window.addEventListener(PROCUREMENT_UPDATED_EVENT, onRequests);
     window.addEventListener(BRF_FILES_UPDATED_EVENT, onFiles);
     window.addEventListener(BRF_PROPERTY_PROFILE_UPDATED_EVENT, onProfile);
+    window.addEventListener(PROJECT_SNAPSHOT_UPDATED_EVENT, onSnapshot);
     window.addEventListener("storage", onStorage);
 
     return () => {
       window.removeEventListener(PROCUREMENT_UPDATED_EVENT, onRequests);
       window.removeEventListener(BRF_FILES_UPDATED_EVENT, onFiles);
       window.removeEventListener(BRF_PROPERTY_PROFILE_UPDATED_EVENT, onProfile);
+      window.removeEventListener(PROJECT_SNAPSHOT_UPDATED_EVENT, onSnapshot);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
 
-  const latestRequest = requests[0] ?? null;
+  const latestRequest =
+    requests.find((request) => request.audience === "brf") ?? null;
+  const effectiveSnapshot =
+    latestRequest?.snapshot?.audience === "brf"
+      ? latestRequest.snapshot
+      : projectSnapshot?.audience === "brf"
+        ? projectSnapshot
+        : null;
   const actions = latestRequest?.actions ?? [];
   const componentRows = actions.map(toComponentRow);
-  const componentYearOptions = useMemo(
-    () => Array.from(new Set(componentRows.map((row) => row.plannedYear))).sort((a, b) => a - b),
-    [componentRows]
-  );
+  const componentYearOptions = Array.from(
+    new Set(componentRows.map((row) => row.plannedYear))
+  ).sort((a, b) => a - b);
 
-  const groupedComponents = useMemo(() => {
+  const groupedComponents = (() => {
     const q = componentQuery.trim().toLowerCase();
     const filtered = componentRows.filter((row) => {
       const matchesQuery =
@@ -297,38 +306,33 @@ export default function BrfFastighetPage() {
       acc[row.group].push(row);
       return acc;
     }, {});
-  }, [componentRows, componentQuery, componentYearFilter]);
+  })();
 
-  const mergedFiles = useMemo(() => {
-    const entries = files.length > 0 ? files : FALLBACK_FILES;
-    const docs = [...entries];
-    const fromRequest = latestRequest?.documentationLevel.match(/:\s*(.+)$/)?.[1]?.trim();
-    if (fromRequest) {
-      const exists = docs.some((doc) => doc.name === fromRequest);
-      if (!exists) {
-        docs.unshift({
-          id: `derived-${fromRequest.toLowerCase()}`,
-          name: fromRequest,
-          fileType: inferBrfFileType(fromRequest),
-          extension: fromRequest.split(".").pop()?.toLowerCase() ?? "",
-          sizeKb: 0,
-          uploadedAt: latestRequest.createdAt,
-          sourceLabel: "Förfrågningsunderlag",
-          linkedActionTitle: latestRequest.title,
-        });
-      }
-    }
-    return docs.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
-  }, [files, latestRequest]);
+  const snapshotFiles = effectiveSnapshot
+    ? effectiveSnapshot.files.map((file, index) => ({
+        id: file.id || `${file.name.toLowerCase()}-${index}`,
+        name: file.name,
+        fileType: inferBrfFileType(file.name),
+        extension: getFileExtension(file.name),
+        sizeKb: file.size ? Number((file.size / 1024).toFixed(1)) : 0,
+        uploadedAt: effectiveSnapshot.createdAt,
+        sourceLabel: "ProjectSnapshot",
+        linkedActionTitle: undefined,
+      }))
+    : [];
 
-  const fileTypeOptions = useMemo(() => {
-    const unique = Array.from(new Set(mergedFiles.map((file) => file.fileType)));
-    return unique.sort((a, b) => getFileTypeLabel(a).localeCompare(getFileTypeLabel(b), "sv"));
-  }, [mergedFiles]);
+  const manualFiles = [...(files.length > 0 ? files : FALLBACK_FILES)].sort((a, b) =>
+    b.uploadedAt.localeCompare(a.uploadedAt)
+  );
+  const allFiles = [...snapshotFiles, ...manualFiles];
 
-  const filteredFiles = useMemo(() => {
+  const fileTypeOptions = Array.from(new Set(allFiles.map((file) => file.fileType))).sort((a, b) =>
+    getFileTypeLabel(a).localeCompare(getFileTypeLabel(b), "sv")
+  );
+
+  const filteredSnapshotFiles = (() => {
     const q = fileQuery.trim().toLowerCase();
-    return mergedFiles.filter((file) => {
+    return snapshotFiles.filter((file) => {
       const matchesType = fileTypeFilter === "Alla" || file.fileType === fileTypeFilter;
       const matchesQuery =
         q.length === 0 ||
@@ -338,17 +342,27 @@ export default function BrfFastighetPage() {
         getFileTypeLabel(file.fileType).toLowerCase().includes(q);
       return matchesType && matchesQuery;
     });
-  }, [mergedFiles, fileQuery, fileTypeFilter]);
+  })();
 
-  const fileTypeCounts = useMemo(
-    () =>
-      mergedFiles.reduce<Record<string, number>>((acc, file) => {
-        const key = file.fileType;
-        acc[key] = (acc[key] || 0) + 1;
-        return acc;
-      }, {}),
-    [mergedFiles]
-  );
+  const filteredManualFiles = (() => {
+    const q = fileQuery.trim().toLowerCase();
+    return manualFiles.filter((file) => {
+      const matchesType = fileTypeFilter === "Alla" || file.fileType === fileTypeFilter;
+      const matchesQuery =
+        q.length === 0 ||
+        file.name.toLowerCase().includes(q) ||
+        file.sourceLabel.toLowerCase().includes(q) ||
+        (file.linkedActionTitle || "").toLowerCase().includes(q) ||
+        getFileTypeLabel(file.fileType).toLowerCase().includes(q);
+      return matchesType && matchesQuery;
+    });
+  })();
+
+  const fileTypeCounts = allFiles.reduce<Record<string, number>>((acc, file) => {
+    const key = file.fileType;
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 
   const profileCompleteness = useMemo(() => {
     const required = PROFILE_REQUIRED_FIELDS.map((field) => field as string);
@@ -526,6 +540,12 @@ export default function BrfFastighetPage() {
           <div className="mt-4 rounded-xl border border-[#EFE8DD] bg-[#FAF8F5] px-3 py-2 text-xs text-[#6B5A47]">
             Senast planuppdatering: {latestRequest ? formatDate(latestRequest.createdAt) : "Ingen ännu"}
           </div>
+          {effectiveSnapshot && (
+            <div className="mt-3 rounded-xl border border-[#EFE8DD] bg-[#FAF8F5] px-3 py-2 text-xs text-[#6B5A47]">
+              Snapshot: {effectiveSnapshot.completenessScore}% komplett · risk{" "}
+              {toSwedishRiskLabel(effectiveSnapshot.riskProfile.level)}
+            </div>
+          )}
         </article>
       </section>
 
@@ -553,53 +573,98 @@ export default function BrfFastighetPage() {
       {tab === "overview" && (
         <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm md:p-6">
           {!isEditing && (
-            <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-              <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
-                <h3 className="text-lg font-bold text-[#2A2520]">Fastighetsfakta</h3>
-                <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
-                  {[
-                    ["Bruttoarea", `${formatInteger(profile.grossM2)} m²`],
-                    ["Våningar", profile.floorsCount || "—"],
-                    ["Hissar", profile.elevatorsCount || "—"],
-                    ["Värmesystem", profile.heatingSystem || "—"],
-                    ["Ventilation", profile.ventilationSystem || "—"],
-                    ["Fasad", profile.facadeType || "—"],
-                    ["Tak", profile.roofType || "—"],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                        {label}
-                      </p>
-                      <p className="mt-1 font-semibold text-[#2A2520]">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </article>
+            <>
+              <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+                <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+                  <h3 className="text-lg font-bold text-[#2A2520]">Fastighetsfakta</h3>
+                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                    {[
+                      ["Bruttoarea", `${formatInteger(profile.grossM2)} m²`],
+                      ["Våningar", profile.floorsCount || "—"],
+                      ["Hissar", profile.elevatorsCount || "—"],
+                      ["Värmesystem", profile.heatingSystem || "—"],
+                      ["Ventilation", profile.ventilationSystem || "—"],
+                      ["Fasad", profile.facadeType || "—"],
+                      ["Tak", profile.roofType || "—"],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                          {label}
+                        </p>
+                        <p className="mt-1 font-semibold text-[#2A2520]">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
 
-              <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
-                <h3 className="text-lg font-bold text-[#2A2520]">Entreprenörsviktig kontext</h3>
-                <div className="mt-3 space-y-2 text-sm text-[#2A2520]">
-                  <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
-                    <span className="font-semibold">Logistik:</span>{" "}
-                    {profile.accessibilityLogistics || "Ej angivet"}
+                <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+                  <h3 className="text-lg font-bold text-[#2A2520]">Entreprenörsviktig kontext</h3>
+                  <div className="mt-3 space-y-2 text-sm text-[#2A2520]">
+                    <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <span className="font-semibold">Logistik:</span>{" "}
+                      {profile.accessibilityLogistics || "Ej angivet"}
+                    </p>
+                    <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <span className="font-semibold">Begränsningar:</span>{" "}
+                      {profile.authorityConstraints || "Ej angivet"}
+                    </p>
+                    <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <span className="font-semibold">Kontakt:</span>{" "}
+                      {profile.procurementContact || "Ej angivet"}
+                      {profile.procurementEmail ? ` · ${profile.procurementEmail}` : ""}
+                      {profile.procurementPhone ? ` · ${profile.procurementPhone}` : ""}
+                    </p>
+                    <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <span className="font-semibold">Noteringar:</span>{" "}
+                      {profile.notes || "Ej angivet"}
+                    </p>
+                  </div>
+                </article>
+              </div>
+
+              {effectiveSnapshot && (
+                <article className="mt-4 rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+                  <h3 className="text-lg font-bold text-[#2A2520]">Projektets sammanfattning</h3>
+                  <div className="mt-3 grid gap-3 text-sm md:grid-cols-2">
+                    <div className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                        Projekttyp
+                      </p>
+                      <p className="mt-1 font-semibold text-[#2A2520]">
+                        {effectiveSnapshot.overview.projectType}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                        Budget
+                      </p>
+                      <p className="mt-1 font-semibold text-[#2A2520]">
+                        {formatSnapshotBudget(effectiveSnapshot)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                        Startfönster
+                      </p>
+                      <p className="mt-1 font-semibold text-[#2A2520]">
+                        {formatSnapshotTimeline(effectiveSnapshot)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                        Risk
+                      </p>
+                      <p className="mt-1 font-semibold text-[#2A2520]">
+                        {toSwedishRiskLabel(effectiveSnapshot.riskProfile.level)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-3 rounded-xl border border-[#E8E3DC] bg-white px-3 py-2 text-sm text-[#2A2520]">
+                    {effectiveSnapshot.overview.description}
                   </p>
-                  <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
-                    <span className="font-semibold">Begränsningar:</span>{" "}
-                    {profile.authorityConstraints || "Ej angivet"}
-                  </p>
-                  <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
-                    <span className="font-semibold">Kontakt:</span>{" "}
-                    {profile.procurementContact || "Ej angivet"}
-                    {profile.procurementEmail ? ` · ${profile.procurementEmail}` : ""}
-                    {profile.procurementPhone ? ` · ${profile.procurementPhone}` : ""}
-                  </p>
-                  <p className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2">
-                    <span className="font-semibold">Noteringar:</span>{" "}
-                    {profile.notes || "Ej angivet"}
-                  </p>
-                </div>
-              </article>
-            </div>
+                </article>
+              )}
+            </>
           )}
 
           {isEditing && (
@@ -862,38 +927,93 @@ export default function BrfFastighetPage() {
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
-                  <th className="px-3 py-3">Namn</th>
-                  <th className="px-3 py-3">Filtyp</th>
-                  <th className="px-3 py-3">Format</th>
-                  <th className="px-3 py-3">Filstorlek</th>
-                  <th className="px-3 py-3">Källa</th>
-                  <th className="px-3 py-3">Kopplad åtgärd</th>
-                  <th className="px-3 py-3">Uppladdad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredFiles.map((file) => (
-                  <tr key={file.id} className="border-b border-[#EFE8DD]">
-                    <td className="px-3 py-3 font-semibold text-[#2A2520]">{file.name}</td>
-                    <td className="px-3 py-3">
-                      <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-1 text-xs font-semibold text-[#6B5A47]">
-                        {getFileTypeLabel(file.fileType)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">{file.extension ? file.extension.toUpperCase() : "—"}</td>
-                    <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
-                    <td className="px-3 py-3">{file.sourceLabel}</td>
-                    <td className="px-3 py-3">{file.linkedActionTitle || "—"}</td>
-                    <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+            <h3 className="text-sm font-semibold text-[#2A2520]">
+              Filer från ProjectSnapshot ({filteredSnapshotFiles.length})
+            </h3>
+            {filteredSnapshotFiles.length === 0 && (
+              <p className="mt-2 text-sm text-[#6B5A47]">
+                Inga snapshot-filer matchar filtret ännu.
+              </p>
+            )}
+            {filteredSnapshotFiles.length > 0 && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[980px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
+                      <th className="px-3 py-3">Namn</th>
+                      <th className="px-3 py-3">Filtyp</th>
+                      <th className="px-3 py-3">Format</th>
+                      <th className="px-3 py-3">Filstorlek</th>
+                      <th className="px-3 py-3">Källa</th>
+                      <th className="px-3 py-3">Uppladdad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSnapshotFiles.map((file) => (
+                      <tr key={file.id} className="border-b border-[#EFE8DD]">
+                        <td className="px-3 py-3 font-semibold text-[#2A2520]">{file.name}</td>
+                        <td className="px-3 py-3">
+                          <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-1 text-xs font-semibold text-[#6B5A47]">
+                            {getFileTypeLabel(file.fileType)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">{file.extension ? file.extension.toUpperCase() : "—"}</td>
+                        <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
+                        <td className="px-3 py-3">{file.sourceLabel}</td>
+                        <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
+
+          <article className="mt-4 rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+            <h3 className="text-sm font-semibold text-[#2A2520]">
+              Manuellt uppladdade filer ({filteredManualFiles.length})
+            </h3>
+            {filteredManualFiles.length === 0 && (
+              <p className="mt-2 text-sm text-[#6B5A47]">
+                Inga manuella filer matchar filtret ännu.
+              </p>
+            )}
+            {filteredManualFiles.length > 0 && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[980px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
+                      <th className="px-3 py-3">Namn</th>
+                      <th className="px-3 py-3">Filtyp</th>
+                      <th className="px-3 py-3">Format</th>
+                      <th className="px-3 py-3">Filstorlek</th>
+                      <th className="px-3 py-3">Källa</th>
+                      <th className="px-3 py-3">Kopplad åtgärd</th>
+                      <th className="px-3 py-3">Uppladdad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredManualFiles.map((file) => (
+                      <tr key={file.id} className="border-b border-[#EFE8DD]">
+                        <td className="px-3 py-3 font-semibold text-[#2A2520]">{file.name}</td>
+                        <td className="px-3 py-3">
+                          <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-1 text-xs font-semibold text-[#6B5A47]">
+                            {getFileTypeLabel(file.fileType)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">{file.extension ? file.extension.toUpperCase() : "—"}</td>
+                        <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
+                        <td className="px-3 py-3">{file.sourceLabel}</td>
+                        <td className="px-3 py-3">{file.linkedActionTitle || "—"}</td>
+                        <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
         </section>
       )}
     </DashboardShell>

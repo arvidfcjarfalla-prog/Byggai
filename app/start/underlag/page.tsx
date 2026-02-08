@@ -171,6 +171,7 @@ export default function UnderlagPage() {
           type: file.type,
           size: file.size,
           tags: [],
+          uploadedAt: new Date().toISOString(),
         };
         addFile(doc);
       }

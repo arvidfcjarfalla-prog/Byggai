@@ -111,7 +111,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const [sessionUser, setSessionUser] = useState<StoredUser | null>(null);
 
-  const persistentUser = useMemo<StoredUser | null>(() => {
+  // Evaluate persisted auth state on every render after hydration so sign-out and
+  // dev-bypass toggles take effect immediately without requiring a full refresh.
+  const persistentUser: StoredUser | null = (() => {
     if (!hydrated) return null;
     const sessionUserId = readSessionUserId();
     const users = readUsers();
@@ -120,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const devUser = getDevBypassUser();
     if (devUser) return devUser;
     return null;
-  }, [hydrated]);
+  })();
   const user = sessionUser ?? persistentUser;
   const ready = hydrated;
 

@@ -22,28 +22,17 @@ import {
   toAddress,
   writeStoredObject,
 } from "../../../lib/workspace-profiles";
+import {
+  formatSnapshotBudget,
+  formatSnapshotTimeline,
+  PROJECT_SNAPSHOT_KEY,
+  PROJECT_SNAPSHOT_UPDATED_EVENT,
+  readProjectSnapshotFromStorage,
+  toSwedishRiskLabel,
+  type ProjectSnapshot,
+} from "../../../lib/project-snapshot";
 
 type PrivateTab = "home" | "project" | "files";
-
-type WizardSnapshot = {
-  projectType?: string | null;
-  currentPhase?: string | null;
-  budget?: {
-    intervalMin?: number;
-    intervalMax?: number;
-  };
-  tidplan?: {
-    startFrom?: string;
-    startTo?: string;
-  };
-  files?: Array<{
-    id?: string;
-    name?: string;
-    type?: string;
-    size?: number;
-    uploadedAt?: string;
-  }>;
-};
 
 const PRIVATE_REQUIRED_FIELDS: Array<keyof PrivateHomeProfile> = [
   "projectName",
@@ -82,36 +71,6 @@ const PRIVATE_FIELD_LABELS: Record<keyof PrivateHomeProfile, string> = {
   notes: "Övrigt",
 };
 
-const PRIVATE_FALLBACK_FILES: BrfFileRecord[] = [
-  {
-    id: "private-fallback-plan",
-    name: "Skiss-kok-och-entredel.pdf",
-    fileType: "Ritning",
-    extension: "pdf",
-    sizeKb: 238,
-    uploadedAt: "2026-02-08T09:10:00.000Z",
-    sourceLabel: "Projektunderlag",
-  },
-  {
-    id: "private-fallback-photo",
-    name: "Foto-befintligt-kok.jpg",
-    fileType: "Bild",
-    extension: "jpg",
-    sizeKb: 1850,
-    uploadedAt: "2026-02-08T09:18:00.000Z",
-    sourceLabel: "Fotodokumentation",
-  },
-  {
-    id: "private-fallback-offert",
-    name: "Prisindikation-snickeri.docx",
-    fileType: "Offert",
-    extension: "docx",
-    sizeKb: 112,
-    uploadedAt: "2026-02-07T14:02:00.000Z",
-    sourceLabel: "Offertdialog",
-  },
-];
-
 function formatDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -149,41 +108,23 @@ function readPrivateFiles(): BrfFileRecord[] {
   }
 }
 
-function readWizardSnapshot(): WizardSnapshot | null {
-  if (typeof window === "undefined") return null;
-  const raw = localStorage.getItem("byggplattformen-wizard");
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as WizardSnapshot;
-    return parsed;
-  } catch {
-    return null;
-  }
+function mapSnapshotFiles(snapshot: ProjectSnapshot | null): BrfFileRecord[] {
+  if (!snapshot || snapshot.files.length === 0) return [];
+  return snapshot.files.slice(0, 100).map((file, index) => ({
+    id: file.id || `${file.name.toLowerCase()}-${index}`,
+    name: file.name,
+    fileType: inferBrfFileType(file.name),
+    extension: getFileExtension(file.name),
+    sizeKb: file.size ? Number((file.size / 1024).toFixed(1)) : 0,
+    uploadedAt: snapshot.createdAt,
+    sourceLabel: "ProjectSnapshot",
+  }));
 }
 
-function mapWizardFiles(snapshot: WizardSnapshot | null): BrfFileRecord[] {
-  if (!snapshot?.files || snapshot.files.length === 0) return [];
-
-  return snapshot.files
-    .filter((file) => Boolean(file.name))
-    .slice(0, 80)
-    .map((file, index) => {
-      const name = file.name || `Fil-${index + 1}`;
-      const fallbackType = file.type ? file.type.toLowerCase() : "";
-      const inferredType = fallbackType.includes("image")
-        ? "Bild"
-        : inferBrfFileType(name);
-
-      return {
-        id: file.id || `${name.toLowerCase()}-${index}`,
-        name,
-        fileType: inferredType,
-        extension: getFileExtension(name),
-        sizeKb: file.size ? Number((file.size / 1024).toFixed(1)) : 0,
-        uploadedAt: file.uploadedAt || new Date().toISOString(),
-        sourceLabel: "Wizard-underlag",
-      };
-    });
+function readPrivateSnapshot(): ProjectSnapshot | null {
+  const snapshot = readProjectSnapshotFromStorage();
+  if (!snapshot || snapshot.audience !== "privat") return null;
+  return snapshot;
 }
 
 export default function PrivatUnderlagPage() {
@@ -194,8 +135,8 @@ export default function PrivatUnderlagPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [profile, setProfile] = useState<PrivateHomeProfile>(() => readPrivateProfile());
   const [draftProfile, setDraftProfile] = useState<PrivateHomeProfile>(() => readPrivateProfile());
-  const [wizardSnapshot, setWizardSnapshot] = useState<WizardSnapshot | null>(() =>
-    readWizardSnapshot()
+  const [projectSnapshot, setProjectSnapshot] = useState<ProjectSnapshot | null>(() =>
+    readPrivateSnapshot()
   );
   const [files, setFiles] = useState<BrfFileRecord[]>(() => readPrivateFiles());
   const [fileQuery, setFileQuery] = useState("");
@@ -219,42 +160,45 @@ export default function PrivatUnderlagPage() {
   useEffect(() => {
     const onProfile = () => setProfile(readPrivateProfile());
     const onFiles = () => setFiles(readPrivateFiles());
+    const onSnapshot = () => setProjectSnapshot(readPrivateSnapshot());
     const onStorage = (event: StorageEvent) => {
       if (!event.key) return;
       if (event.key === PRIVATE_HOME_PROFILE_KEY) onProfile();
-      if (event.key === PRIVATE_FILES_KEY || event.key === "byggplattformen-wizard") {
-        onFiles();
-        setWizardSnapshot(readWizardSnapshot());
-      }
+      if (event.key === PRIVATE_FILES_KEY) onFiles();
+      if (event.key === PROJECT_SNAPSHOT_KEY) onSnapshot();
     };
 
     window.addEventListener(PRIVATE_HOME_PROFILE_UPDATED_EVENT, onProfile);
     window.addEventListener(PRIVATE_FILES_UPDATED_EVENT, onFiles);
+    window.addEventListener(PROJECT_SNAPSHOT_UPDATED_EVENT, onSnapshot);
     window.addEventListener("storage", onStorage);
 
     return () => {
       window.removeEventListener(PRIVATE_HOME_PROFILE_UPDATED_EVENT, onProfile);
       window.removeEventListener(PRIVATE_FILES_UPDATED_EVENT, onFiles);
+      window.removeEventListener(PROJECT_SNAPSHOT_UPDATED_EVENT, onSnapshot);
       window.removeEventListener("storage", onStorage);
     };
   }, []);
 
-  const wizardFiles = useMemo(() => mapWizardFiles(wizardSnapshot), [wizardSnapshot]);
-
-  const mergedFiles = useMemo(() => {
-    if (files.length > 0) return files;
-    if (wizardFiles.length > 0) return wizardFiles;
-    return PRIVATE_FALLBACK_FILES;
-  }, [files, wizardFiles]);
+  const snapshotFiles = useMemo(
+    () => mapSnapshotFiles(projectSnapshot),
+    [projectSnapshot]
+  );
+  const manualFiles = useMemo(() => files, [files]);
+  const allFiles = useMemo(
+    () => [...snapshotFiles, ...manualFiles],
+    [manualFiles, snapshotFiles]
+  );
 
   const fileTypeOptions = useMemo(() => {
-    const unique = Array.from(new Set(mergedFiles.map((file) => file.fileType)));
+    const unique = Array.from(new Set(allFiles.map((file) => file.fileType)));
     return unique.sort((a, b) => getFileTypeLabel(a).localeCompare(getFileTypeLabel(b), "sv"));
-  }, [mergedFiles]);
+  }, [allFiles]);
 
-  const filteredFiles = useMemo(() => {
+  const filteredSnapshotFiles = useMemo(() => {
     const q = fileQuery.trim().toLowerCase();
-    return mergedFiles.filter((file) => {
+    return snapshotFiles.filter((file) => {
       const matchesType = fileTypeFilter === "Alla" || file.fileType === fileTypeFilter;
       const matchesQuery =
         q.length === 0 ||
@@ -263,16 +207,29 @@ export default function PrivatUnderlagPage() {
         file.sourceLabel.toLowerCase().includes(q);
       return matchesType && matchesQuery;
     });
-  }, [fileQuery, fileTypeFilter, mergedFiles]);
+  }, [fileQuery, fileTypeFilter, snapshotFiles]);
+
+  const filteredManualFiles = useMemo(() => {
+    const q = fileQuery.trim().toLowerCase();
+    return manualFiles.filter((file) => {
+      const matchesType = fileTypeFilter === "Alla" || file.fileType === fileTypeFilter;
+      const matchesQuery =
+        q.length === 0 ||
+        file.name.toLowerCase().includes(q) ||
+        getFileTypeLabel(file.fileType).toLowerCase().includes(q) ||
+        file.sourceLabel.toLowerCase().includes(q);
+      return matchesType && matchesQuery;
+    });
+  }, [fileQuery, fileTypeFilter, manualFiles]);
 
   const fileTypeCounts = useMemo(
     () =>
-      mergedFiles.reduce<Record<string, number>>((acc, file) => {
+      allFiles.reduce<Record<string, number>>((acc, file) => {
         const key = file.fileType;
         acc[key] = (acc[key] || 0) + 1;
         return acc;
       }, {}),
-    [mergedFiles]
+    [allFiles]
   );
 
   const completeness = useMemo(() => {
@@ -619,28 +576,27 @@ export default function PrivatUnderlagPage() {
               {
                 label: "Projektstatus",
                 value:
-                  wizardSnapshot?.projectType && wizardSnapshot?.currentPhase
-                    ? `${wizardSnapshot.projectType} · ${wizardSnapshot.currentPhase}`
+                  projectSnapshot
+                    ? `${projectSnapshot.overview.projectType} · ${projectSnapshot.overview.title}`
                     : "Inte satt ännu",
               },
               {
                 label: "Budgetintervall",
                 value:
-                  wizardSnapshot?.budget?.intervalMin !== undefined &&
-                  wizardSnapshot?.budget?.intervalMax !== undefined
-                    ? `${wizardSnapshot.budget.intervalMin} - ${wizardSnapshot.budget.intervalMax} tkr`
+                  projectSnapshot
+                    ? formatSnapshotBudget(projectSnapshot)
                     : profile.budgetRange || "Ej satt",
               },
               {
                 label: "Startfönster",
                 value:
-                  wizardSnapshot?.tidplan?.startFrom && wizardSnapshot?.tidplan?.startTo
-                    ? `${wizardSnapshot.tidplan.startFrom} till ${wizardSnapshot.tidplan.startTo}`
+                  projectSnapshot
+                    ? formatSnapshotTimeline(projectSnapshot)
                     : profile.desiredStart || "Ej satt",
               },
               {
                 label: "Filer i underlag",
-                value: `${mergedFiles.length} st`,
+                value: `${snapshotFiles.length + manualFiles.length} st`,
               },
             ].map((item) => (
               <article key={item.label} className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
@@ -651,6 +607,32 @@ export default function PrivatUnderlagPage() {
               </article>
             ))}
           </div>
+
+          {projectSnapshot && (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Snapshot-kvalitet
+                </p>
+                <p className="mt-1 font-semibold text-[#2A2520]">
+                  {projectSnapshot.completenessScore}% komplett
+                </p>
+                <p className="mt-2 text-[#6B5A47]">
+                  Risknivå: {toSwedishRiskLabel(projectSnapshot.riskProfile.level)}
+                </p>
+              </article>
+              <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Omfattning i snapshot
+                </p>
+                <p className="mt-1 text-[#2A2520]">
+                  {projectSnapshot.scope.selectedItems.length > 0
+                    ? projectSnapshot.scope.selectedItems.slice(0, 6).join(", ")
+                    : "Ingen specifik delmängd vald ännu."}
+                </p>
+              </article>
+            </div>
+          )}
 
           <div className="mt-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4 text-sm text-[#2A2520]">
             <p className="font-semibold">Tips för bättre offertunderlag</p>
@@ -709,36 +691,91 @@ export default function PrivatUnderlagPage() {
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
-                  <th className="px-3 py-3">Namn</th>
-                  <th className="px-3 py-3">Filtyp</th>
-                  <th className="px-3 py-3">Format</th>
-                  <th className="px-3 py-3">Filstorlek</th>
-                  <th className="px-3 py-3">Källa</th>
-                  <th className="px-3 py-3">Uppladdad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredFiles.map((file) => (
-                  <tr key={file.id} className="border-b border-[#EFE8DD]">
-                    <td className="px-3 py-3 font-semibold text-[#2A2520]">{file.name}</td>
-                    <td className="px-3 py-3">
-                      <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-1 text-xs font-semibold text-[#6B5A47]">
-                        {getFileTypeLabel(file.fileType)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">{file.extension ? file.extension.toUpperCase() : "—"}</td>
-                    <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
-                    <td className="px-3 py-3">{file.sourceLabel}</td>
-                    <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <article className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+            <h3 className="text-sm font-semibold text-[#2A2520]">
+              Filer från ProjectSnapshot ({filteredSnapshotFiles.length})
+            </h3>
+            {filteredSnapshotFiles.length === 0 && (
+              <p className="mt-2 text-sm text-[#6B5A47]">
+                Inga snapshot-filer matchar filtret ännu.
+              </p>
+            )}
+            {filteredSnapshotFiles.length > 0 && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[860px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
+                      <th className="px-3 py-3">Namn</th>
+                      <th className="px-3 py-3">Filtyp</th>
+                      <th className="px-3 py-3">Format</th>
+                      <th className="px-3 py-3">Filstorlek</th>
+                      <th className="px-3 py-3">Källa</th>
+                      <th className="px-3 py-3">Uppladdad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSnapshotFiles.map((file) => (
+                      <tr key={file.id} className="border-b border-[#EFE8DD]">
+                        <td className="px-3 py-3 font-semibold text-[#2A2520]">{file.name}</td>
+                        <td className="px-3 py-3">
+                          <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-1 text-xs font-semibold text-[#6B5A47]">
+                            {getFileTypeLabel(file.fileType)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">{file.extension ? file.extension.toUpperCase() : "—"}</td>
+                        <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
+                        <td className="px-3 py-3">{file.sourceLabel}</td>
+                        <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
+
+          <article className="mt-4 rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+            <h3 className="text-sm font-semibold text-[#2A2520]">
+              Manuellt uppladdade filer ({filteredManualFiles.length})
+            </h3>
+            {filteredManualFiles.length === 0 && (
+              <p className="mt-2 text-sm text-[#6B5A47]">
+                Inga manuella filer uppladdade ännu.
+              </p>
+            )}
+            {filteredManualFiles.length > 0 && (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[860px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
+                      <th className="px-3 py-3">Namn</th>
+                      <th className="px-3 py-3">Filtyp</th>
+                      <th className="px-3 py-3">Format</th>
+                      <th className="px-3 py-3">Filstorlek</th>
+                      <th className="px-3 py-3">Källa</th>
+                      <th className="px-3 py-3">Uppladdad</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredManualFiles.map((file) => (
+                      <tr key={file.id} className="border-b border-[#EFE8DD]">
+                        <td className="px-3 py-3 font-semibold text-[#2A2520]">{file.name}</td>
+                        <td className="px-3 py-3">
+                          <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-1 text-xs font-semibold text-[#6B5A47]">
+                            {getFileTypeLabel(file.fileType)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">{file.extension ? file.extension.toUpperCase() : "—"}</td>
+                        <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
+                        <td className="px-3 py-3">{file.sourceLabel}</td>
+                        <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
         </section>
       )}
     </DashboardShell>

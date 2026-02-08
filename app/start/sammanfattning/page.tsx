@@ -1,60 +1,240 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useWizard } from "../../components/wizard-context";
-import type { RiskLevel } from "../../components/wizard-context";
 import { WizardProgress } from "../../components/wizard-progress";
 import { Shell } from "../../components/ui/shell";
 import { Card } from "../../components/ui/card";
 import { Notice } from "../../components/ui/notice";
 import { Breadcrumbs, type Crumb } from "../../components/ui/breadcrumbs";
+import type {
+  PlatformRequest,
+  ProcurementAction,
+  RequestDocumentSummary,
+  RequestFileRecord,
+  RequestPropertySnapshot,
+  RequestScopeItem,
+} from "../../lib/requests-store";
+import { saveRequest } from "../../lib/requests-store";
+import {
+  buildProjectSnapshotFromWizard,
+  formatSnapshotBudget,
+  formatSnapshotTimeline,
+  PROJECT_SNAPSHOT_KEY,
+  readProjectSnapshotFromStorage,
+  toSwedishRiskLabel,
+  type ProjectSnapshot,
+  writeProjectSnapshotToStorage,
+} from "../../lib/project-snapshot";
 
-const RISK_COLORS: Record<RiskLevel, string> = {
-  green: "border-emerald-200 bg-emerald-50/80 text-emerald-800",
-  yellow: "border-amber-200 bg-amber-50/80 text-amber-800",
-  red: "border-red-200 bg-red-50/80 text-red-800",
+const RISK_COLORS: Record<ProjectSnapshot["riskProfile"]["level"], string> = {
+  low: "border-emerald-200 bg-emerald-50/80 text-emerald-800",
+  medium: "border-amber-200 bg-amber-50/80 text-amber-800",
+  high: "border-red-200 bg-red-50/80 text-red-800",
 };
 
-const DUMMY_ENTREPRENEURS = [
-  { id: "1", name: "Bygg AB", score: 92, reason: "Matchar renovering, erfarenhet med våtrum" },
-  { id: "2", name: "RenoPro", score: 88, reason: "Närhet, kapacitet nästa kvartal" },
-  { id: "3", name: "Hantverk & Co", score: 85, reason: "Bra betyg, transparent prissättning" },
-];
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function inferCategory(projectType: string): string {
+  if (projectType === "renovering") return "Renovering";
+  if (projectType === "tillbyggnad") return "Tillbyggnad";
+  if (projectType === "nybyggnation") return "Nybyggnation";
+  return "Övrigt";
+}
+
+function buildActionsFromSnapshot(snapshot: ProjectSnapshot): ProcurementAction[] {
+  const titles = snapshot.scope.selectedItems.length
+    ? snapshot.scope.selectedItems
+    : [snapshot.overview.title];
+  const baseYear = Number(
+    (snapshot.timeline.desiredStartFrom || snapshot.createdAt).slice(0, 4)
+  );
+  const year = Number.isFinite(baseYear) ? baseYear : new Date().getFullYear();
+  const budgetMin = snapshot.budget.min ?? snapshot.budget.max ?? 0;
+  const budgetMax = snapshot.budget.max ?? snapshot.budget.min ?? budgetMin;
+  const totalBudget = budgetMin > 0 || budgetMax > 0 ? Math.max(budgetMin, budgetMax) : 0;
+  const perAction = titles.length > 0 ? Math.round(totalBudget / titles.length) : totalBudget;
+
+  return titles.slice(0, 20).map((title, index) => ({
+    id: `privat-action-${Date.now()}-${index}`,
+    title,
+    category: inferCategory(snapshot.overview.projectType),
+    status: "Planerad",
+    plannedYear: year + Math.floor(index / 4),
+    estimatedPriceSek: perAction > 0 ? perAction : 0,
+    emissionsKgCo2e: 0,
+    source: "local",
+    details: "Skapad från privat sammanfattning.",
+  }));
+}
+
+function mapSnapshotFiles(snapshot: ProjectSnapshot): RequestFileRecord[] {
+  return snapshot.files.map((file, index) => ({
+    id: file.id || `${file.name.toLowerCase()}-${index}`,
+    name: file.name,
+    fileTypeLabel: file.type,
+    extension: file.name.includes(".") ? file.name.split(".").pop() ?? "" : "",
+    sizeKb: Number((file.size / 1024).toFixed(1)),
+    uploadedAt: file.id ? snapshot.createdAt : new Date().toISOString(),
+    sourceLabel: "ProjectSnapshot",
+    tags: [...file.tags],
+  }));
+}
+
+function buildDocumentSummary(files: RequestFileRecord[]): RequestDocumentSummary {
+  const byType = files.reduce<Record<string, number>>((acc, file) => {
+    const key = file.fileTypeLabel || "Okänd";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const summary = Object.entries(byType)
+    .map(([typeLabel, count]) => ({ typeLabel, count }))
+    .sort((a, b) => b.count - a.count || a.typeLabel.localeCompare(b.typeLabel, "sv"));
+
+  return {
+    totalFiles: files.length,
+    byType: summary,
+    highlights: summary.slice(0, 3).map((entry) => `${entry.typeLabel}: ${entry.count} st`),
+  };
+}
+
+function buildScopeItems(snapshot: ProjectSnapshot): RequestScopeItem[] {
+  if (snapshot.scope.selectedItems.length > 0) {
+    return snapshot.scope.selectedItems.map((title) => ({ title }));
+  }
+
+  if (snapshot.scope.freeDescription && snapshot.scope.freeDescription.trim().length > 0) {
+    return [
+      {
+        title: snapshot.overview.title,
+        details: snapshot.scope.freeDescription,
+      },
+    ];
+  }
+
+  return [];
+}
+
+function validateSendPrerequisites(
+  snapshot: ProjectSnapshot,
+  scopeItems: RequestScopeItem[],
+  budgetUnknownExplicit: boolean
+): string[] {
+  const errors: string[] = [];
+
+  if (snapshot.overview.description.trim().length < 20) {
+    errors.push("Beskriv projektet tydligare (minst 20 tecken) innan du skickar.");
+  }
+
+  const hasBudgetRange = snapshot.budget.min != null || snapshot.budget.max != null;
+  if (!hasBudgetRange && !budgetUnknownExplicit) {
+    errors.push("Ange budgetspann eller markera att budgeten är oklar.");
+  }
+
+  const hasDesiredStart = Boolean(
+    snapshot.timeline.desiredStartFrom || snapshot.timeline.desiredStartTo
+  );
+  const hasFlexibleStart = snapshot.timeline.flexibility === "flexible";
+  if (!hasDesiredStart && !hasFlexibleStart) {
+    errors.push("Ange önskat startfönster eller markera att starten är flexibel.");
+  }
+
+  if (scopeItems.length === 0) {
+    errors.push("Välj minst en scope-post i omfattning innan du skickar.");
+  }
+
+  return errors;
+}
+
+function deriveMissingInfo(
+  snapshot: ProjectSnapshot,
+  scopeItems: RequestScopeItem[],
+  files: RequestFileRecord[]
+): string[] {
+  const missing: string[] = [];
+
+  if (scopeItems.length === 0) {
+    missing.push("Omfattning saknar tydliga åtgärdsposter.");
+  }
+
+  if (files.length === 0) {
+    missing.push("Inga dokumentfiler uppladdade.");
+  }
+
+  if (!snapshot.overview.location || snapshot.overview.location.trim().length === 0) {
+    missing.push("Adress/område saknas.");
+  }
+
+  if (snapshot.budget.min == null && snapshot.budget.max == null) {
+    missing.push("Budgetspann saknas.");
+  }
+
+  if (!snapshot.timeline.desiredStartFrom && !snapshot.timeline.desiredStartTo) {
+    missing.push("Startfönster saknas.");
+  }
+
+  return missing;
+}
 
 export default function SammanfattningPage() {
-  const { data, updateData, stepConfig, projectBrief } = useWizard();
-  const [showAuthGate, setShowAuthGate] = useState(false);
-  const [showSaveLinkGate, setShowSaveLinkGate] = useState(false);
-  const [quoteGenerated, setQuoteGenerated] = useState(!!data.quoteDraft);
-  const [matchList, setMatchList] = useState<typeof DUMMY_ENTREPRENEURS | null>(null);
+  const { data, stepConfig, projectBrief } = useWizard();
+  const [snapshotSeed, setSnapshotSeed] = useState<Partial<ProjectSnapshot>>(() => {
+    const persisted = readProjectSnapshotFromStorage();
+    if (persisted) return persisted;
+    return {
+      id: `snapshot-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      audience: data.userRole === "brf" ? "brf" : "privat",
+    };
+  });
 
-  const risk = projectBrief.riskProfile;
-  const openQuestions = projectBrief.openQuestions;
-  const projectType = data.projectType;
+  const snapshot = useMemo(
+    () =>
+      buildProjectSnapshotFromWizard(
+        data,
+        snapshotSeed.audience &&
+          snapshotSeed.audience !== (data.userRole === "brf" ? "brf" : "privat")
+          ? undefined
+          : snapshotSeed
+      ),
+    [data, snapshotSeed]
+  );
+
+  const [requestNotice, setRequestNotice] = useState<string | null>(null);
+  const [sendValidationErrors, setSendValidationErrors] = useState<string[]>([]);
+
   const completionHref =
     data.userRole === "brf"
       ? "/brf"
       : data.userRole === "entreprenor"
         ? "/entreprenor"
         : "/privatperson";
+
   const typeCrumb: Crumb | null =
-    projectType && projectType !== "annat"
+    data.projectType && data.projectType !== "annat"
       ? {
           href:
-            projectType === "renovering"
+            data.projectType === "renovering"
               ? "/start/renovering"
-              : projectType === "tillbyggnad"
+              : data.projectType === "tillbyggnad"
                 ? "/start/tillbyggnad"
                 : "/start/nybyggnation",
           label:
-            projectType === "renovering"
+            data.projectType === "renovering"
               ? "Renovering"
-              : projectType === "tillbyggnad"
+              : data.projectType === "tillbyggnad"
                 ? "Tillbyggnad"
                 : "Nybyggnation",
         }
       : null;
+
   const breadcrumbs: Crumb[] = [
     { href: "/start", label: "Projekttyp" },
     { href: "/start/nulage", label: "Nuläge" },
@@ -67,42 +247,97 @@ export default function SammanfattningPage() {
     { label: "Sammanfattning" },
   ];
 
-  const buildPayload = () => ({
-    projectType: data.projectType,
-    currentPhase: data.currentPhase,
-    freeTextDescription: data.freeTextDescription,
-    derivedSummary: data.derivedSummary,
-    omfattning: data.omfattning,
-    budget: data.budget,
-    tidplan: data.tidplan,
-    files: data.files?.map((f) => ({ name: f.name, tags: f.tags, relatesTo: f.relatesTo })),
-    riskProfile: projectBrief.riskProfile,
-  });
+  const selectedScopeSummary = useMemo(() => {
+    if (snapshot.scope.selectedItems.length === 0) return "Inga specifika delmoment valda ännu.";
+    return snapshot.scope.selectedItems.slice(0, 8).join(", ");
+  }, [snapshot.scope.selectedItems]);
+
+  useEffect(() => {
+    writeProjectSnapshotToStorage(snapshot);
+  }, [snapshot]);
 
   const handleGenerateQuote = () => {
-    updateData({
-      quoteDraft: {
-        createdAt: new Date().toISOString(),
-        summary: "Offertutkast genererat från dina svar (MVP-stub).",
-        payload: buildPayload(),
+    const lockedSnapshot: ProjectSnapshot = {
+      ...snapshot,
+      lockedAt: new Date().toISOString(),
+    };
+    setSnapshotSeed(lockedSnapshot);
+    writeProjectSnapshotToStorage(lockedSnapshot);
+    setSendValidationErrors([]);
+    setRequestNotice(null);
+  };
+
+  const handleSkickaForfragan = () => {
+    const baseSnapshot = snapshot.lockedAt
+      ? snapshot
+      : {
+          ...snapshot,
+          lockedAt: new Date().toISOString(),
+        };
+
+    if (!snapshot.lockedAt) {
+      setSnapshotSeed(baseSnapshot);
+      writeProjectSnapshotToStorage(baseSnapshot);
+    }
+
+    const scopeItems = buildScopeItems(baseSnapshot);
+    const budgetUnknownExplicit = data.budget?.financing === "osaker";
+    const gateErrors = validateSendPrerequisites(
+      baseSnapshot,
+      scopeItems,
+      budgetUnknownExplicit
+    );
+
+    if (gateErrors.length > 0) {
+      setSendValidationErrors(gateErrors);
+      setRequestNotice(null);
+      return;
+    }
+
+    const actions = buildActionsFromSnapshot(baseSnapshot);
+    const files = mapSnapshotFiles(baseSnapshot);
+    const propertySnapshot: RequestPropertySnapshot = {
+      audience: "privat",
+      title: baseSnapshot.overview.title,
+      address: baseSnapshot.overview.location || "Adress ej angiven",
+      accessAndLogistics:
+        typeof baseSnapshot.scope.projectSpecific.accessibility === "string"
+          ? baseSnapshot.scope.projectSpecific.accessibility
+          : undefined,
+    };
+
+    const nextRequest: PlatformRequest = {
+      id: `req-${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      audience: "privat",
+      status: "sent",
+      requestType: "offer_request_v1",
+      snapshot: baseSnapshot,
+      title: baseSnapshot.overview.title,
+      location: baseSnapshot.overview.location || "Okänt område",
+      budgetRange: formatSnapshotBudget(baseSnapshot),
+      desiredStart: formatSnapshotTimeline(baseSnapshot),
+      scope: {
+        actions,
+        scopeItems,
       },
-    });
-    setQuoteGenerated(true);
-  };
+      completeness: baseSnapshot.completenessScore,
+      missingInfo: deriveMissingInfo(baseSnapshot, scopeItems, files),
+      documentationLevel:
+        files.length > 0
+          ? `${files.length} filer från wizard-snapshot`
+          : "Ingen fil uppladdad ännu",
+      riskProfile: toSwedishRiskLabel(baseSnapshot.riskProfile.level),
+      propertySnapshot,
+      documentSummary: buildDocumentSummary(files),
+      files,
+    };
 
-  const [showSendAuthGate, setShowSendAuthGate] = useState(false);
-  const handleSkickaForfragan = () => setShowSendAuthGate(true);
-
-  const handleMatch = () => {
-    setMatchList(DUMMY_ENTREPRENEURS);
-  };
-
-  const handleInvite = () => {
-    setShowAuthGate(true);
-  };
-
-  const handleSaveLink = () => {
-    setShowSaveLinkGate(true);
+    saveRequest(nextRequest);
+    setSendValidationErrors([]);
+    setRequestNotice(
+      `Förfrågan skickad (${nextRequest.id}). Entreprenörsvyn uppdateras direkt.`
+    );
   };
 
   return (
@@ -114,104 +349,73 @@ export default function SammanfattningPage() {
             <span className="h-1.5 w-1.5 rounded-full bg-[#8C7860]" />
             Sammanfattning
           </div>
+
           <h1 className="mt-6 text-3xl font-bold tracking-tight text-[#2A2520] md:text-4xl">
-            Projektöversikt
+            Projektets sammanfattning
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#766B60]">
-            Granska dina val, riskprofil och nästa steg. Härifrån kan du generera
-            offertunderlag eller matcha entreprenörer.
+            Här byggs din offertbara sanning. Snapshoten används i privat dashboard,
+            BRF-förfrågan och entreprenörsvy.
           </p>
           <div className="mt-8">
             <WizardProgress />
           </div>
 
-          {/* Det här skickas till entreprenör */}
           <Card className="mt-8 border-2 border-[#8C7860]/30 bg-white">
-            <h2 className="mb-4 text-lg font-bold text-[#2A2520]">
-              Det här skickas till entreprenör
-            </h2>
-            <div className="space-y-4 text-sm">
+            <h2 className="mb-4 text-lg font-bold text-[#2A2520]">Snapshot</h2>
+            <dl className="grid gap-4 sm:grid-cols-2">
               <div>
-                <span className="font-semibold text-[#8C7860]">Projekttyp · Nuläge</span>
-                <p className="mt-0.5 text-[#2A2520]">
-                  {projectType === "renovering" ? "Renovering" : projectType === "tillbyggnad" ? "Tillbyggnad" : projectType === "nybyggnation" ? "Nybyggnation" : "Annat"}
-                  {data.currentPhase ? ` · ${data.currentPhase === "ide" ? "Tidig idé" : data.currentPhase === "skiss" ? "Skiss" : data.currentPhase === "ritningar" ? "Färdiga ritningar" : "Färdigt underlag"}` : ""}
-                </p>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Projekttyp
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-[#2A2520]">
+                  {snapshot.overview.projectType}
+                </dd>
               </div>
-              {data.freeTextDescription && (
-                <div>
-                  <span className="font-semibold text-[#8C7860]">Fri beskrivning</span>
-                  <p className="mt-0.5 text-[#2A2520]">{data.freeTextDescription}</p>
-                </div>
-              )}
-              {data.derivedSummary && (data.derivedSummary.goal || data.derivedSummary.scope) && (
-                <div>
-                  <span className="font-semibold text-[#8C7860]">Strukturerad tolkning</span>
-                  <p className="mt-0.5 text-[#2A2520]">
-                    {[data.derivedSummary.goal, data.derivedSummary.scope].filter(Boolean).join(" — ")}
-                    {data.derivedSummary.flags?.length ? ` (flaggor: ${data.derivedSummary.flags.join(", ")})` : ""}
-                  </p>
-                </div>
-              )}
-              {data.omfattning && (
-                <div>
-                  <span className="font-semibold text-[#8C7860]">Omfattning</span>
-                  <p className="mt-0.5 text-[#2A2520]">{data.omfattning}</p>
-                </div>
-              )}
-              {(data.budget?.intervalMin != null || data.budget?.intervalMax != null) && (
-                <div>
-                  <span className="font-semibold text-[#8C7860]">Budget</span>
-                  <p className="mt-0.5 text-[#2A2520]">
-                    {data.budget.intervalMin ?? "?"} – {data.budget.intervalMax ?? "?"} tkr
-                    {data.budget.isHard ? " (hård)" : " (flexibel)"}
-                  </p>
-                </div>
-              )}
-              {(data.tidplan?.startFrom || data.tidplan?.startTo) && (
-                <div>
-                  <span className="font-semibold text-[#8C7860]">Tidplan</span>
-                  <p className="mt-0.5 text-[#2A2520]">
-                    Start {data.tidplan.startFrom ?? "—"}–{data.tidplan.startTo ?? "—"}
-                    {data.tidplan.executionPace ? ` · ${data.tidplan.executionPace}` : ""}
-                    {data.tidplan.blockedWeeks?.length ? ` · ${data.tidplan.blockedWeeks.length} blockerade veckor` : ""}
-                  </p>
-                </div>
-              )}
-              {(data.files?.length ?? 0) > 0 && (
-                <div>
-                  <span className="font-semibold text-[#8C7860]">Filer</span>
-                  <ul className="mt-1 space-y-0.5 text-[#2A2520]">
-                    {data.files!.map((f) => (
-                      <li key={f.id}>
-                        {f.name} {f.tags.length ? `[${f.tags.join(", ")}]` : ""} {f.relatesTo ? `→ ${f.relatesTo}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
               <div>
-                <span className="font-semibold text-[#8C7860]">Riskprofil</span>
-                <p className="mt-0.5 text-[#2A2520]">{risk.reasons.join(" ")}</p>
-                {risk.recommendedNextSteps.length > 0 && (
-                  <p className="mt-1 text-[#766B60]">Rekommenderat: {risk.recommendedNextSteps.join("; ")}</p>
-                )}
+                <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Publik
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-[#2A2520]">{snapshot.audience}</dd>
               </div>
-            </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Budget
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-[#2A2520]">
+                  {formatSnapshotBudget(snapshot)} ({snapshot.budget.confidence})
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Tidsfönster
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-[#2A2520]">
+                  {formatSnapshotTimeline(snapshot)} ({snapshot.timeline.flexibility})
+                </dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Omfattning
+                </dt>
+                <dd className="mt-1 text-sm text-[#2A2520]">{selectedScopeSummary}</dd>
+              </div>
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                  Beskrivning
+                </dt>
+                <dd className="mt-1 text-sm text-[#2A2520]">{snapshot.overview.description}</dd>
+              </div>
+            </dl>
+
             <div className="mt-6 flex flex-wrap gap-3">
-              {!quoteGenerated ? (
-                <button
-                  type="button"
-                  onClick={handleGenerateQuote}
-                  className="rounded-2xl bg-[#8C7860] px-6 py-3 text-sm font-semibold text-white shadow-md outline-none transition-all hover:bg-[#6B5A47] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
-                >
-                  Generera offertunderlag
-                </button>
-              ) : (
-                <Notice variant="success" className="inline-block">
-                  Offertutkast skapat (sparat lokalt).
-                </Notice>
-              )}
+              <button
+                type="button"
+                onClick={handleGenerateQuote}
+                className="rounded-2xl bg-[#8C7860] px-6 py-3 text-sm font-semibold text-white shadow-md outline-none transition-all hover:bg-[#6B5A47] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
+              >
+                Generera offertunderlag
+              </button>
               <button
                 type="button"
                 onClick={handleSkickaForfragan}
@@ -219,213 +423,128 @@ export default function SammanfattningPage() {
               >
                 Skicka förfrågan
               </button>
+              <span className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
+                Snapshot-ID: {snapshot.id}
+              </span>
+              <span className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
+                Lagrad i {PROJECT_SNAPSHOT_KEY}
+              </span>
             </div>
-            {showSendAuthGate && (
-              <div className="mt-4 rounded-2xl border-2 border-[#8C7860]/40 bg-[#CDB49B]/10 p-4">
-                <p className="mb-3 text-sm font-medium text-[#2A2520]">
-                  För att skicka behöver du konto (för att logga beslut och spåra svar).
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  <Link href="/konto" className="rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]">
-                    Skapa konto
-                  </Link>
-                  <Link href="/login" className="rounded-xl border-2 border-[#E8E3DC] bg-white px-4 py-2 text-sm font-semibold text-[#766B60] hover:border-[#CDB49B]">
-                    Logga in
-                  </Link>
-                  <button type="button" onClick={() => setShowSendAuthGate(false)} className="text-sm font-semibold text-[#766B60] underline-offset-2 hover:underline">
-                    Stäng
-                  </button>
-                </div>
+
+            {snapshot.lockedAt && (
+              <Notice variant="success" className="mt-4">
+                Offertunderlaget är låst ({new Date(snapshot.lockedAt).toLocaleString("sv-SE")}).
+              </Notice>
+            )}
+            {sendValidationErrors.length > 0 && (
+              <Notice variant="warning" className="mt-3">
+                <p className="font-semibold">Kan inte skicka än:</p>
+                <ul className="mt-1 list-inside list-disc space-y-1">
+                  {sendValidationErrors.map((error) => (
+                    <li key={error}>{error}</li>
+                  ))}
+                </ul>
+              </Notice>
+            )}
+            {requestNotice && (
+              <Notice variant="success" className="mt-3">
+                {requestNotice}
+              </Notice>
+            )}
+          </Card>
+
+          <Card className={`mt-6 border-2 ${RISK_COLORS[snapshot.riskProfile.level]}`}>
+            <h2 className="mb-2 text-lg font-bold">Riskprofil</h2>
+            <p className="mb-3 text-sm">
+              Nivå: {toSwedishRiskLabel(snapshot.riskProfile.level)} · Kompletthet: {" "}
+              {snapshot.completenessScore}%
+            </p>
+            <ul className="list-inside list-disc space-y-1 text-sm">
+              {snapshot.riskProfile.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+            {snapshot.riskProfile.recommendedNextSteps.length > 0 && (
+              <div className="mt-3 text-sm">
+                <p className="font-semibold">Rekommenderade nästa steg</p>
+                <ul className="mt-1 list-inside list-disc space-y-1">
+                  {snapshot.riskProfile.recommendedNextSteps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </Card>
 
-          {/* Dina val + Redigera-länkar */}
-          <Card className="mt-8">
-            <h2 className="mb-4 text-lg font-bold text-[#2A2520]">
-              Dina val
-            </h2>
+          <Card className="mt-6">
+            <h2 className="mb-4 text-lg font-bold text-[#2A2520]">Dina val</h2>
             <dl className="grid gap-3 sm:grid-cols-2">
-              {stepConfig.map((step) => {
-                const path = step.path;
-                const isCurrent = path === "/start/sammanfattning";
-                if (isCurrent) return null;
-                const label = step.label;
-                let value: string | undefined;
-                if (path === "/start") value = projectType === "renovering" ? "Renovering" : projectType === "tillbyggnad" ? "Tillbyggnad" : projectType === "nybyggnation" ? "Nybyggnation" : "Annat";
-                else if (path === "/start/nulage") value = data.currentPhase === "ide" ? "Tidig idé" : data.currentPhase === "skiss" ? "Skiss" : data.currentPhase === "ritningar" ? "Färdiga ritningar" : data.currentPhase === "fardigt" ? "Färdigt underlag" : undefined;
-                else if (path === "/start/budget" && data.budget) value = (data.budget.intervalMin != null || data.budget.intervalMax != null) ? `${data.budget.intervalMin ?? "?"} – ${data.budget.intervalMax ?? "?"} tkr` : undefined;
-                else if (path === "/start/tidplan" && data.tidplan) value = (data.tidplan.startFrom || data.tidplan.startTo) ? `${data.tidplan.startFrom ?? "—"} till ${data.tidplan.startTo ?? "—"}` : undefined;
-                else if (path === "/start/beskrivning") value = data.freeTextDescription ? `${data.freeTextDescription.slice(0, 40)}…` : undefined;
-                else if (path === "/start/underlag") value = (data.files?.length ?? 0) > 0 ? `${data.files!.length} filer` : undefined;
-                else if (path === "/start/omfattning") value = data.omfattning ?? undefined;
-                else if (path === "/start/renovering" || path === "/start/tillbyggnad" || path === "/start/nybyggnation") value = "—";
-                if (value === undefined && path !== "/start/renovering" && path !== "/start/tillbyggnad" && path !== "/start/nybyggnation") value = "—";
-                return (
-                  <div key={path} className="flex items-start justify-between gap-2">
+              {stepConfig
+                .filter((step) => step.path !== "/start/sammanfattning")
+                .map((step) => (
+                  <div key={step.path} className="flex items-start justify-between gap-2">
                     <div>
-                      <dt className="text-xs font-semibold uppercase text-[#8C7860]">{label}</dt>
-                      <dd className="mt-0.5 text-[#2A2520]">{value ?? "—"}</dd>
+                      <dt className="text-xs font-semibold uppercase text-[#8C7860]">
+                        {step.label}
+                      </dt>
+                      <dd className="mt-0.5 text-[#2A2520]">
+                        {step.path === "/start/underlag"
+                          ? `${snapshot.files.length} filer`
+                          : step.path === "/start/omfattning"
+                            ? selectedScopeSummary
+                            : "Ifyllt"}
+                      </dd>
                     </div>
                     <Link
-                      href={path}
+                      href={step.path}
                       className="shrink-0 text-sm font-semibold text-[#8C7860] underline-offset-2 hover:underline"
                     >
                       Redigera
                     </Link>
                   </div>
-                );
-              })}
+                ))}
             </dl>
+            {projectBrief.openQuestions.length > 0 && (
+              <div className="mt-4 rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-4 py-3">
+                <p className="text-sm font-semibold text-[#2A2520]">Saker som behöver beslutas</p>
+                <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-[#6B5A47]">
+                  {projectBrief.openQuestions.map((question) => (
+                    <li key={question}>{question}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Card>
 
-          {/* Saker som behöver beslutas (openQuestions) */}
-          {openQuestions.length > 0 && (
-            <Card className="mt-6 border-2 border-[#CDB49B]/40 bg-[#CDB49B]/5">
-              <h2 className="mb-2 text-lg font-bold text-[#2A2520]">
-                Saker som behöver beslutas
-              </h2>
-              <p className="mb-4 text-sm text-[#766B60]">
-                Baserat på dina svar finns några frågor kvar som påverkar offerter och planering.
-              </p>
-              <ul className="list-inside list-disc space-y-1 text-sm text-[#2A2520]">
-                {openQuestions.map((q, i) => (
-                  <li key={i}>{q}</li>
-                ))}
-              </ul>
-            </Card>
-          )}
-
-          {/* Riskkort */}
-          <Card className={`mt-6 border-2 ${RISK_COLORS[risk.level]}`}>
-            <h2 className="mb-2 text-lg font-bold">
-              Riskprofil
+          <Card className="mt-6">
+            <h2 className="mb-4 text-lg font-bold text-[#2A2520]">
+              Filer som ingår i snapshot
             </h2>
-            <p className="mb-4 text-sm opacity-90">
-              Baserat på dina svar – neutral och transparent.
-            </p>
-            <ul className="mb-4 list-inside list-disc space-y-1 text-sm">
-              {risk.reasons.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
-            <div>
-              <span className="text-xs font-semibold uppercase opacity-80">Rekommenderade nästa steg</span>
-              <ul className="mt-2 space-y-1 text-sm">
-                {risk.recommendedNextSteps.map((s, i) => (
-                  <li key={i}>• {s}</li>
-                ))}
-              </ul>
-            </div>
-          </Card>
-
-          {/* Matchning */}
-          <div className="mt-8">
-            <Card>
-              <h3 className="mb-2 text-base font-bold text-[#2A2520]">
-                Matcha entreprenörer
-              </h3>
-              <p className="mb-4 text-sm text-[#766B60]">
-                Få en shortlist med transparent scoring (MVP: exempeldata).
+            {snapshot.files.length === 0 && (
+              <p className="text-sm text-[#766B60]">
+                Inga filer kopplade ännu. Lägg till filer i steget Underlag.
               </p>
-              <button
-                type="button"
-                onClick={handleMatch}
-                className="rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-6 py-3 text-sm font-semibold text-white shadow-md outline-none transition-all hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
-              >
-                Visa matchning
-              </button>
-            </Card>
-          </div>
-
-          {matchList && (
-            <Card className="mt-6">
-              <h3 className="mb-4 text-base font-bold text-[#2A2520]">
-                Föreslagna entreprenörer (stub)
-              </h3>
-              <ul className="space-y-4">
-                {matchList.map((e) => (
+            )}
+            {snapshot.files.length > 0 && (
+              <ul className="space-y-2 text-sm text-[#2A2520]">
+                {snapshot.files.map((file) => (
                   <li
-                    key={e.id}
-                    className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4"
+                    key={file.id}
+                    className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2"
                   >
-                    <div>
-                      <p className="font-semibold text-[#2A2520]">{e.name}</p>
-                      <p className="text-sm text-[#766B60]">{e.reason}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-[#8C7860]/15 px-3 py-1 text-sm font-bold text-[#6B5A47]">
-                        {e.score} %
-                      </span>
-                    </div>
+                    <span className="font-semibold">{file.name}</span>
+                    <span className="ml-2 text-[#766B60]">
+                      ({file.type} · {formatBytes(file.size)})
+                    </span>
+                    {file.tags.length > 0 && (
+                      <div className="mt-1 text-xs text-[#6B5A47]">
+                        Taggar: {file.tags.join(", ")}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 text-xs text-[#766B60]">
-                Poäng är beräknade utifrån kompetens, kapacitet och geografi (stub-logik).
-              </p>
-            </Card>
-          )}
-
-          {/* Bjud in / Spara & dela */}
-          <Card className="mt-8">
-            <h3 className="mb-2 text-base font-bold text-[#2A2520]">
-              Bjud in eller spara
-            </h3>
-            <p className="mb-4 text-sm text-[#766B60]">
-              Dela projektet med partner, arkitekt eller entreprenör, eller spara och dela en länk. För delning och sparande krävs konto.
-            </p>
-            <div className="flex flex-wrap gap-3">
-            {(showAuthGate || showSaveLinkGate) ? (
-              <div className="rounded-2xl border-2 border-[#8C7860]/40 bg-[#CDB49B]/10 p-6">
-                <h4 className="mb-2 font-semibold text-[#2A2520]">
-                  Konto krävs för att spara och dela
-                </h4>
-                <p className="mb-4 text-sm text-[#766B60]">
-                  För att bjuda in andra, spara projektet eller dela en länk behöver du skapa konto eller logga in.
-                  Det säkerställer att endast du bestämmer vilka som får åtkomst och att dina uppgifter sparas säkert.
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Link
-                    href="/konto"
-                    className="rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white outline-none transition-all hover:bg-[#6B5A47] focus-visible:ring-2 focus-visible:ring-[#8C7860]"
-                  >
-                    Skapa konto
-                  </Link>
-                  <Link
-                    href="/login"
-                    className="rounded-xl border-2 border-[#E8E3DC] bg-white px-4 py-2 text-sm font-semibold text-[#766B60] outline-none transition-all hover:border-[#CDB49B] focus-visible:ring-2 focus-visible:ring-[#8C7860]"
-                  >
-                    Logga in
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => { setShowAuthGate(false); setShowSaveLinkGate(false); }}
-                    className="text-sm font-semibold text-[#766B60] underline-offset-2 hover:underline"
-                  >
-                    Fortsätt utan att spara
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-              <button
-                type="button"
-                onClick={handleInvite}
-                className="rounded-2xl border-2 border-[#CDB49B] bg-white px-6 py-3 text-sm font-semibold text-[#8C7860] outline-none transition-all hover:bg-[#CDB49B]/10 focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
-              >
-                Bjud in deltagare
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveLink}
-                className="rounded-2xl border-2 border-[#CDB49B] bg-white px-6 py-3 text-sm font-semibold text-[#8C7860] outline-none transition-all hover:bg-[#CDB49B]/10 focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
-              >
-                Spara & dela länk
-              </button>
-              </>
             )}
-            </div>
           </Card>
 
           <div className="mt-10 flex flex-wrap items-center justify-between gap-4">
@@ -433,16 +552,13 @@ export default function SammanfattningPage() {
               href="/start/tidplan"
               className="inline-flex items-center gap-2 rounded-2xl border-2 border-[#E8E3DC] bg-white px-6 py-4 text-sm font-semibold text-[#766B60] outline-none transition-all hover:border-[#CDB49B] focus-visible:ring-2 focus-visible:ring-[#8C7860]"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="10 4 6 8 10 12" />
-              </svg>
               Tillbaka
             </Link>
             <Link
               href={completionHref}
               className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
             >
-              Klar – till landningssidan
+              Klar - till landningssidan
             </Link>
           </div>
         </div>
