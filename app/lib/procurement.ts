@@ -17,6 +17,8 @@ export type {
   RequestPropertySnapshot,
   RequestScopeItem,
   RequestAudience,
+  RequestRecipient,
+  RequestRecipientStatus,
   RequestStatus,
 } from "./requests-store";
 

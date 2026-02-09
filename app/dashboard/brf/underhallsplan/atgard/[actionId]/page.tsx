@@ -1,14 +1,26 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { DashboardShell } from "../../../components/dashboard-shell";
-import { useAuth } from "../../../components/auth-context";
-import { BrfUploadWorkspace } from "../../../start/upload/page";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "../../../../../components/auth-context";
+import { DashboardShell } from "../../../../../components/dashboard-shell";
+import { BrfActionDetailsEditor } from "../../../../../components/brf-action-details-editor";
 
-export default function BrfUnderhallsplanPage() {
+function toParamValue(value: string | string[] | undefined): string {
+  if (!value) return "";
+  if (Array.isArray(value)) return value[0] || "";
+  return value;
+}
+
+export default function BrfActionDetailsPage() {
   const router = useRouter();
+  const params = useParams<{ actionId: string }>();
+  const searchParams = useSearchParams();
   const { user, ready } = useAuth();
+  const actionId = decodeURIComponent(toParamValue(params?.actionId));
+  const from = searchParams.get("from");
+  const backHref =
+    from && from.startsWith("/dashboard/brf") ? from : "/dashboard/brf/underhallsplan";
 
   useEffect(() => {
     if (!ready) return;
@@ -40,8 +52,8 @@ export default function BrfUnderhallsplanPage() {
   return (
     <DashboardShell
       roleLabel="Bostadsrättsförening"
-      heading="Underhållsplan och åtgärdslista"
-      subheading="Ladda upp underhållsplan, granska extraherade åtgärder och skicka strukturerade förfrågningar."
+      heading="Detaljera åtgärd"
+      subheading="Fyll i åtgärdsspecifik information så att entreprenören får ett tydligt och jämförbart underlag."
       startProjectHref="/dashboard/brf/underhallsplan"
       startProjectLabel="Underhållsplan"
       navItems={[
@@ -54,7 +66,7 @@ export default function BrfUnderhallsplanPage() {
       ]}
       cards={[]}
     >
-      <BrfUploadWorkspace embedded />
+      <BrfActionDetailsEditor key={actionId} actionId={actionId} backHref={backHref} />
     </DashboardShell>
   );
 }

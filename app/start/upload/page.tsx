@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type {
   PlatformRequest,
@@ -11,14 +11,27 @@ import type {
   RequestFileRecord,
   RequestPropertySnapshot,
 } from "../../lib/requests-store";
-import { saveRequest } from "../../lib/requests-store";
+import {
+  defaultRecipientsForAudience,
+  saveRequest,
+  toRecipientLabel,
+} from "../../lib/requests-store";
 import type { BrfFileRecord } from "../../lib/brf-workspace";
 import {
-  BRF_FILES_KEY,
   BRF_FILES_UPDATED_EVENT,
+  clearWorkspaceFiles,
   getFileExtension,
   getFileTypeLabel,
+  hasWorkspaceFilePayload,
   inferBrfFileType,
+  inferContentGroup,
+  normalizeWorkspaceFileRecord,
+  openWorkspaceFile,
+  readWorkspaceFiles,
+  removeWorkspaceFile,
+  storeWorkspaceFilePayload,
+  structureWorkspaceFiles,
+  writeWorkspaceFiles,
 } from "../../lib/brf-workspace";
 import type { BrfPropertyProfile } from "../../lib/workspace-profiles";
 import {
@@ -35,6 +48,9 @@ import {
 } from "../../lib/project-snapshot";
 import {
   fromProcurementAction,
+  readBrfActionsDraft,
+  readBrfRequestMeta,
+  toProcurementAction,
   writeBrfActionsDraft,
   writeBrfRequestMeta,
 } from "../../lib/brf-start";
@@ -48,6 +64,32 @@ const FALLBACK_ACTIONS = [
   "Byte av undercentral för värme",
   "Taköversyn och partiell omläggning",
 ];
+
+const BRF_UPLOAD_VIEW_KEY = "byggplattformen-brf-upload-view";
+
+type BrfUploadViewState = {
+  searchQuery: string;
+  categoryFilter: string;
+  statusFilter: string;
+  yearFilter: string;
+  selectedActionIds: string[];
+  sentCount: number;
+  extractNotice: string | null;
+  requestTitle: string;
+  lastUploadedFileName: string | null;
+};
+
+const DEFAULT_BRF_UPLOAD_VIEW_STATE: BrfUploadViewState = {
+  searchQuery: "",
+  categoryFilter: "alla",
+  statusFilter: "alla",
+  yearFilter: "alla",
+  selectedActionIds: [],
+  sentCount: 0,
+  extractNotice: null,
+  requestTitle: "BRF Underhållsplan 2026–2028",
+  lastUploadedFileName: null,
+};
 
 type ParsedRow = {
   title: string;
@@ -464,15 +506,7 @@ async function extractActions(file: File): Promise<ProcurementAction[]> {
 }
 
 function readBrfFiles(): BrfFileRecord[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(BRF_FILES_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as BrfFileRecord[]) : [];
-  } catch {
-    return [];
-  }
+  return readWorkspaceFiles("brf");
 }
 
 function readBrfProfile(): BrfPropertyProfile {
@@ -482,23 +516,66 @@ function readBrfProfile(): BrfPropertyProfile {
   );
 }
 
-function persistUploadedBrfFile(file: File, sourceLabel: string) {
+function readBrfUploadViewState(): BrfUploadViewState {
+  if (typeof window === "undefined") return { ...DEFAULT_BRF_UPLOAD_VIEW_STATE };
+  const raw = localStorage.getItem(BRF_UPLOAD_VIEW_KEY);
+  if (!raw) return { ...DEFAULT_BRF_UPLOAD_VIEW_STATE };
+  try {
+    const parsed = JSON.parse(raw) as Partial<BrfUploadViewState>;
+    return {
+      searchQuery: typeof parsed.searchQuery === "string" ? parsed.searchQuery : "",
+      categoryFilter:
+        typeof parsed.categoryFilter === "string" ? parsed.categoryFilter : "alla",
+      statusFilter: typeof parsed.statusFilter === "string" ? parsed.statusFilter : "alla",
+      yearFilter: typeof parsed.yearFilter === "string" ? parsed.yearFilter : "alla",
+      selectedActionIds: Array.isArray(parsed.selectedActionIds)
+        ? parsed.selectedActionIds.filter((value): value is string => typeof value === "string")
+        : [],
+      sentCount:
+        typeof parsed.sentCount === "number" && Number.isFinite(parsed.sentCount)
+          ? parsed.sentCount
+          : 0,
+      extractNotice: typeof parsed.extractNotice === "string" ? parsed.extractNotice : null,
+      requestTitle:
+        typeof parsed.requestTitle === "string" && parsed.requestTitle.trim().length > 0
+          ? parsed.requestTitle
+          : DEFAULT_BRF_UPLOAD_VIEW_STATE.requestTitle,
+      lastUploadedFileName:
+        typeof parsed.lastUploadedFileName === "string" &&
+        parsed.lastUploadedFileName.trim().length > 0
+          ? parsed.lastUploadedFileName
+          : null,
+    };
+  } catch {
+    return { ...DEFAULT_BRF_UPLOAD_VIEW_STATE };
+  }
+}
+
+function writeBrfUploadViewState(state: BrfUploadViewState) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(BRF_UPLOAD_VIEW_KEY, JSON.stringify(state));
+}
+
+async function persistUploadedBrfFile(file: File, sourceLabel: string) {
   if (typeof window === "undefined") return;
   const id = `${file.name.toLowerCase()}-${file.size}`;
-  const entry: BrfFileRecord = {
+  const fileType = inferBrfFileType(file.name);
+  const entry: BrfFileRecord = normalizeWorkspaceFileRecord({
     id,
     name: file.name,
-    fileType: inferBrfFileType(file.name),
+    fileType,
     extension: getFileExtension(file.name),
     sizeKb: Number((file.size / 1024).toFixed(1)),
     uploadedAt: new Date().toISOString(),
     sourceLabel,
-  };
+    mimeType: file.type || undefined,
+    contentGroup: inferContentGroup(fileType),
+  });
 
   const existing = readBrfFiles();
   const updated = [entry, ...existing.filter((item) => item.id !== id)].slice(0, 250);
-  localStorage.setItem(BRF_FILES_KEY, JSON.stringify(updated));
-  window.dispatchEvent(new Event(BRF_FILES_UPDATED_EVENT));
+  writeWorkspaceFiles("brf", updated);
+  await storeWorkspaceFilePayload("brf", id, file);
 }
 
 function buildDocumentSummary(files: BrfFileRecord[]): RequestDocumentSummary {
@@ -539,18 +616,51 @@ export function BrfUploadWorkspace({
 }: {
   embedded?: boolean;
 } = {}) {
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const actionDetailsBasePath = pathname.startsWith("/dashboard/")
+    ? "/dashboard/brf/underhallsplan/atgard"
+    : "/start/upload/atgard";
+  const returnPath = pathname || "/dashboard/brf/underhallsplan";
+  const [initialState] = useState(() => {
+    const draftActions = readBrfActionsDraft();
+    const viewState = readBrfUploadViewState();
+    const meta = readBrfRequestMeta();
+    const actionsFromDraft = draftActions.map(toProcurementAction);
+    const selectedFromDraft = draftActions
+      .filter((action) => action.selected !== false)
+      .map((action) => action.id);
+    return {
+      actionsFromDraft,
+      selectedFromDraft,
+      viewState,
+      meta,
+    };
+  });
   const [file, setFile] = useState<File | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [actions, setActions] = useState<ProcurementAction[]>([]);
-  const [selectedActionIds, setSelectedActionIds] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("alla");
-  const [statusFilter, setStatusFilter] = useState("alla");
-  const [yearFilter, setYearFilter] = useState("alla");
-  const [sentCount, setSentCount] = useState(0);
-  const [requestTitle, setRequestTitle] = useState("BRF Underhållsplan 2026–2028");
-  const [extractNotice, setExtractNotice] = useState<string | null>(null);
+  const [actions, setActions] = useState<ProcurementAction[]>(initialState.actionsFromDraft);
+  const [selectedActionIds, setSelectedActionIds] = useState<string[]>(
+    initialState.selectedFromDraft.length > 0
+      ? initialState.selectedFromDraft
+      : initialState.viewState.selectedActionIds
+  );
+  const [searchQuery, setSearchQuery] = useState(initialState.viewState.searchQuery);
+  const [categoryFilter, setCategoryFilter] = useState(initialState.viewState.categoryFilter);
+  const [statusFilter, setStatusFilter] = useState(initialState.viewState.statusFilter);
+  const [yearFilter, setYearFilter] = useState(initialState.viewState.yearFilter);
+  const [sentCount, setSentCount] = useState(initialState.viewState.sentCount);
+  const [requestTitle, setRequestTitle] = useState(
+    initialState.meta.title?.trim() || initialState.viewState.requestTitle
+  );
+  const [extractNotice, setExtractNotice] = useState<string | null>(
+    initialState.viewState.extractNotice
+  );
+  const [lastUploadedFileName, setLastUploadedFileName] = useState<string | null>(
+    initialState.viewState.lastUploadedFileName
+  );
+  const [storedFiles, setStoredFiles] = useState<BrfFileRecord[]>(() => readBrfFiles());
+  const [fileSystemNotice, setFileSystemNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const titleFromQuery = searchParams.get("title");
@@ -563,6 +673,45 @@ export function BrfUploadWorkspace({
       setRequestTitle(titleFromQuery);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    const syncFiles = () => setStoredFiles(readBrfFiles());
+    syncFiles();
+    window.addEventListener(BRF_FILES_UPDATED_EVENT, syncFiles);
+    window.addEventListener("storage", syncFiles);
+    return () => {
+      window.removeEventListener(BRF_FILES_UPDATED_EVENT, syncFiles);
+      window.removeEventListener("storage", syncFiles);
+    };
+  }, []);
+
+  useEffect(() => {
+    const validSelected = selectedActionIds.filter((id) =>
+      actions.some((action) => action.id === id)
+    );
+    writeBrfUploadViewState({
+      searchQuery,
+      categoryFilter,
+      statusFilter,
+      yearFilter,
+      selectedActionIds: validSelected,
+      sentCount,
+      extractNotice,
+      requestTitle,
+      lastUploadedFileName,
+    });
+  }, [
+    actions,
+    categoryFilter,
+    extractNotice,
+    lastUploadedFileName,
+    requestTitle,
+    searchQuery,
+    selectedActionIds,
+    sentCount,
+    statusFilter,
+    yearFilter,
+  ]);
 
   const categoryOptions = useMemo(
     () =>
@@ -617,20 +766,71 @@ export function BrfUploadWorkspace({
     [filteredActions]
   );
 
-  const toggleAction = (id: string) => {
-    setSelectedActionIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  const groupedStoredFiles = useMemo(() => {
+    return storedFiles.reduce<Record<string, BrfFileRecord[]>>((acc, file) => {
+      const group = file.contentGroup || inferContentGroup(file.fileType);
+      if (!acc[group]) acc[group] = [];
+      acc[group].push(file);
+      return acc;
+    }, {});
+  }, [storedFiles]);
+
+  const persistDraft = (nextActions: ProcurementAction[], nextSelectedIds: string[]) => {
+    writeBrfActionsDraft(
+      nextActions.map((action) => ({
+        ...fromProcurementAction(action),
+        selected: nextSelectedIds.includes(action.id),
+      }))
     );
+  };
+
+  const removeStoredFile = (fileId: string) => {
+    removeWorkspaceFile("brf", fileId);
+    setFileSystemNotice("Fil borttagen.");
+  };
+
+  const clearAllStoredFiles = () => {
+    clearWorkspaceFiles("brf");
+    setFileSystemNotice("Alla uppladdade filer rensades.");
+  };
+
+  const structureStoredFiles = () => {
+    const structured = structureWorkspaceFiles("brf");
+    setStoredFiles(structured);
+    setFileSystemNotice("Filstrukturen uppdaterades efter innehåll.");
+  };
+
+  const openStoredFile = (fileId: string) => {
+    const ok = openWorkspaceFile("brf", fileId);
+    if (!ok) {
+      setFileSystemNotice(
+        "Filen kan inte öppnas lokalt ännu. Ladda upp den igen om du vill förhandsvisa den här."
+      );
+    } else {
+      setFileSystemNotice(null);
+    }
+  };
+
+  const toggleAction = (id: string) => {
+    const nextSelected = selectedActionIds.includes(id)
+      ? selectedActionIds.filter((x) => x !== id)
+      : [...selectedActionIds, id];
+    setSelectedActionIds(nextSelected);
+    persistDraft(actions, nextSelected);
   };
 
   const toggleAllFiltered = () => {
     const filteredIds = filteredActions.map((a) => a.id);
     const allSelected = filteredIds.every((id) => selectedActionIds.includes(id));
     if (allSelected) {
-      setSelectedActionIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+      const nextSelected = selectedActionIds.filter((id) => !filteredIds.includes(id));
+      setSelectedActionIds(nextSelected);
+      persistDraft(actions, nextSelected);
       return;
     }
-    setSelectedActionIds((prev) => Array.from(new Set([...prev, ...filteredIds])));
+    const nextSelected = Array.from(new Set([...selectedActionIds, ...filteredIds]));
+    setSelectedActionIds(nextSelected);
+    persistDraft(actions, nextSelected);
   };
 
   const handleExtract = async () => {
@@ -638,7 +838,8 @@ export function BrfUploadWorkspace({
     setIsExtracting(true);
     setSentCount(0);
     setExtractNotice(null);
-    persistUploadedBrfFile(file, requestTitle.trim() || "BRF underhållsprojekt");
+    setLastUploadedFileName(file.name);
+    await persistUploadedBrfFile(file, requestTitle.trim() || "BRF underhållsprojekt");
     await new Promise((resolve) => setTimeout(resolve, 400));
     try {
       const formData = new FormData();
@@ -755,6 +956,7 @@ export function BrfUploadWorkspace({
         loaM2: profile.loaM2,
       },
     });
+    const recipients = defaultRecipientsForAudience("brf");
 
     const nextRequest: PlatformRequest = {
       id: `req-${Date.now()}`,
@@ -782,9 +984,11 @@ export function BrfUploadWorkspace({
       propertySnapshot,
       documentSummary: buildDocumentSummary(requestFiles),
       files: mapFilesForRequest(requestFiles),
+      recipients,
+      distribution: recipients.map((recipient) => toRecipientLabel(recipient)),
     };
 
-    writeBrfActionsDraft(selected.map(fromProcurementAction));
+    persistDraft(actions, selectedActionIds);
     writeBrfRequestMeta({
       startMode: "underhallsplan",
       title: snapshot.overview.title,
@@ -828,10 +1032,10 @@ export function BrfUploadWorkspace({
                 Till BRF-dashboard
               </Link>
               <Link
-                href="/entreprenor"
+                href="/dashboard/brf/forfragningar"
                 className="rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]"
               >
-                Visa entreprenörsvy
+                Mina förfrågningar
               </Link>
             </div>
           </div>
@@ -854,7 +1058,7 @@ export function BrfUploadWorkspace({
                   Fil
                 </p>
                 <p className="mt-1 font-semibold text-[#2A2520]">
-                  {file ? file.name : "Ingen fil vald ännu"}
+                  {file ? file.name : lastUploadedFileName || "Ingen fil vald ännu"}
                 </p>
               </div>
               <div className="rounded-xl border border-[#EFE8DD] bg-[#FAF8F5] p-3">
@@ -901,7 +1105,13 @@ export function BrfUploadWorkspace({
               </label>
               <input
                 type="file"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  const nextFile = e.target.files?.[0] ?? null;
+                  setFile(nextFile);
+                  if (nextFile) {
+                    setLastUploadedFileName(nextFile.name);
+                  }
+                }}
                 className="block w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm"
               />
               <label className="block text-sm font-semibold text-[#2A2520]">
@@ -924,13 +1134,128 @@ export function BrfUploadWorkspace({
           </div>
           {sentCount > 0 && (
             <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-              Förfrågan skickad ({sentCount}). Öppna entreprenörsvyn för att se inkommande projekt.
+              Förfrågan skickad ({sentCount}). Öppna “Mina förfrågningar” för status,
+              mottagare och kompletteringar.
             </p>
           )}
           {extractNotice && (
             <p className="mt-3 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-4 py-3 text-sm text-[#6B5A47]">
               {extractNotice}
             </p>
+          )}
+        </section>
+
+        <section className="mt-6 rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold tracking-tight text-[#2A2520]">
+                Dokumentöversikt
+              </h2>
+              <p className="mt-1 text-sm text-[#766B60]">
+                Filerna sorteras automatiskt efter innehållstyp. Klicka på en fil för att öppna.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={structureStoredFiles}
+              disabled={storedFiles.length === 0}
+              className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Strukturera efter innehåll
+            </button>
+            <button
+              type="button"
+              onClick={clearAllStoredFiles}
+              disabled={storedFiles.length === 0}
+              className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Rensa alla filer
+            </button>
+          </div>
+
+          {fileSystemNotice && (
+            <p className="mt-3 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-4 py-3 text-sm text-[#6B5A47]">
+              {fileSystemNotice}
+            </p>
+          )}
+
+          {storedFiles.length === 0 && (
+            <p className="mt-4 rounded-xl border border-[#EFE8DD] bg-[#FAF8F5] px-4 py-3 text-sm text-[#6B5A47]">
+              Inga uppladdade filer ännu.
+            </p>
+          )}
+
+          {storedFiles.length > 0 && (
+            <div className="mt-4 space-y-4">
+              {Object.entries(groupedStoredFiles)
+                .sort(([a], [b]) => a.localeCompare(b, "sv"))
+                .map(([group, filesInGroup]) => (
+                  <article
+                    key={group}
+                    className="rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4"
+                  >
+                    <h3 className="text-sm font-semibold text-[#2A2520]">
+                      {group} ({filesInGroup.length})
+                    </h3>
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full min-w-[860px] border-collapse text-sm">
+                        <thead>
+                          <tr className="border-b border-[#E6DFD6] text-left text-xs uppercase tracking-wider text-[#8C7860]">
+                            <th className="px-3 py-3">Fil</th>
+                            <th className="px-3 py-3">Filtyp</th>
+                            <th className="px-3 py-3">Taggar</th>
+                            <th className="px-3 py-3">Källa</th>
+                            <th className="px-3 py-3">Åtgärd</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filesInGroup.map((storedFile) => (
+                            <tr key={storedFile.id} className="border-b border-[#EFE8DD]">
+                              <td className="px-3 py-3 font-semibold text-[#2A2520]">
+                                {storedFile.name}
+                              </td>
+                              <td className="px-3 py-3">{getFileTypeLabel(storedFile.fileType)}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {(storedFile.tags || []).slice(0, 4).map((tag) => (
+                                    <span
+                                      key={`${storedFile.id}-${tag}`}
+                                      className="rounded-full border border-[#D9D1C6] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#6B5A47]"
+                                    >
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="px-3 py-3">{storedFile.sourceLabel}</td>
+                              <td className="px-3 py-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => openStoredFile(storedFile.id)}
+                                    className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                                  >
+                                    {hasWorkspaceFilePayload("brf", storedFile.id)
+                                      ? "Öppna"
+                                      : "Öppna (saknas lokalt)"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeStoredFile(storedFile.id)}
+                                    className="rounded-lg border border-[#E8D4BF] bg-white px-3 py-1.5 text-xs font-semibold text-[#8A5B2A] hover:bg-[#FFF5EA]"
+                                  >
+                                    Ta bort
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </article>
+                ))}
+            </div>
           )}
         </section>
 
@@ -1033,11 +1358,21 @@ export function BrfUploadWorkspace({
                         />
                       </td>
                       <td className="px-3 py-3 font-semibold text-[#2A2520]">
-                        <div>{action.title}</div>
+                        <Link
+                          href={`${actionDetailsBasePath}/${encodeURIComponent(action.id)}?from=${encodeURIComponent(returnPath)}`}
+                          className="text-left font-semibold text-[#2A2520] underline-offset-2 hover:text-[#8C7860] hover:underline"
+                        >
+                          {action.title}
+                        </Link>
                         {(action.sourceSheet || action.sourceRow) && (
                           <div className="mt-1 text-xs font-normal text-[#766B60]">
                             Källa: {action.sourceSheet || "Ark"}{" "}
                             {action.sourceRow ? `rad ${action.sourceRow}` : ""}
+                          </div>
+                        )}
+                        {action.extraDetails && action.extraDetails.length > 0 && (
+                          <div className="mt-1 text-xs font-normal text-[#6B5A47]">
+                            {action.extraDetails.length} detaljfält ifyllda
                           </div>
                         )}
                       </td>
@@ -1051,13 +1386,21 @@ export function BrfUploadWorkspace({
                       <td className="px-3 py-3">{action.emissionsKgCo2e.toFixed(1)} kg</td>
                       <td className="px-3 py-3 font-semibold">{formatSek(action.estimatedPriceSek)}</td>
                       <td className="px-3 py-3">
-                        <button
-                          type="button"
-                          onClick={() => sendRequest([action])}
-                          className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                        >
-                          Skicka
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`${actionDetailsBasePath}/${encodeURIComponent(action.id)}?from=${encodeURIComponent(returnPath)}`}
+                            className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            Detaljer
+                          </Link>
+                          <button
+                            type="button"
+                            onClick={() => sendRequest([action])}
+                            className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            Skicka
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
+import { RequestsOutboxPanel } from "../../../components/requests-outbox-panel";
 import { useAuth } from "../../../components/auth-context";
-import { BrfUploadWorkspace } from "../../../start/upload/page";
 
-export default function BrfUnderhallsplanPage() {
+export default function BrfForfragningarPage() {
   const router = useRouter();
   const { user, ready } = useAuth();
 
@@ -20,7 +20,9 @@ export default function BrfUnderhallsplanPage() {
       router.replace("/dashboard/privat");
       return;
     }
-    if (user.role === "entreprenor") router.replace("/dashboard/entreprenor");
+    if (user.role === "entreprenor") {
+      router.replace("/dashboard/entreprenor");
+    }
   }, [ready, router, user]);
 
   if (!ready) {
@@ -40,10 +42,10 @@ export default function BrfUnderhallsplanPage() {
   return (
     <DashboardShell
       roleLabel="Bostadsrättsförening"
-      heading="Underhållsplan och åtgärdslista"
-      subheading="Ladda upp underhållsplan, granska extraherade åtgärder och skicka strukturerade förfrågningar."
-      startProjectHref="/dashboard/brf/underhallsplan"
-      startProjectLabel="Underhållsplan"
+      heading="BRF-förfrågningar"
+      subheading="Följ utskickade upphandlingar, se mottagare per projekt och komplettera underlag till entreprenörer."
+      startProjectHref="/brf/start/sammanfattning"
+      startProjectLabel="Skapa ny förfrågan"
       navItems={[
         { href: "/dashboard/brf", label: "Översikt" },
         { href: "/dashboard/brf/fastighet", label: "Fastighet" },
@@ -54,7 +56,7 @@ export default function BrfUnderhallsplanPage() {
       ]}
       cards={[]}
     >
-      <BrfUploadWorkspace embedded />
+      <RequestsOutboxPanel audience="brf" />
     </DashboardShell>
   );
 }

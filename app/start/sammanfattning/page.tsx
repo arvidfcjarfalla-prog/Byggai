@@ -8,7 +8,9 @@ import { Shell } from "../../components/ui/shell";
 import { Card } from "../../components/ui/card";
 import { Notice } from "../../components/ui/notice";
 import { Breadcrumbs, type Crumb } from "../../components/ui/breadcrumbs";
+import { SchedulePreviewCard } from "../../components/gantt/SchedulePreviewCard";
 import type {
+  RequestRecipient,
   PlatformRequest,
   ProcurementAction,
   RequestDocumentSummary,
@@ -16,7 +18,11 @@ import type {
   RequestPropertySnapshot,
   RequestScopeItem,
 } from "../../lib/requests-store";
-import { saveRequest } from "../../lib/requests-store";
+import {
+  defaultRecipientsForAudience,
+  saveRequest,
+  toRecipientLabel,
+} from "../../lib/requests-store";
 import {
   buildProjectSnapshotFromWizard,
   formatSnapshotBudget,
@@ -27,6 +33,7 @@ import {
   type ProjectSnapshot,
   writeProjectSnapshotToStorage,
 } from "../../lib/project-snapshot";
+import type { ScheduleProjectContext } from "../../lib/schedule";
 
 const RISK_COLORS: Record<ProjectSnapshot["riskProfile"]["level"], string> = {
   low: "border-emerald-200 bg-emerald-50/80 text-emerald-800",
@@ -216,6 +223,7 @@ export default function SammanfattningPage() {
       : data.userRole === "entreprenor"
         ? "/entreprenor"
         : "/privatperson";
+  const requestsHref = snapshot.audience === "brf" ? "/dashboard/brf/forfragningar" : "/dashboard/privat/forfragningar";
 
   const typeCrumb: Crumb | null =
     data.projectType && data.projectType !== "annat"
@@ -251,6 +259,16 @@ export default function SammanfattningPage() {
     if (snapshot.scope.selectedItems.length === 0) return "Inga specifika delmoment valda ännu.";
     return snapshot.scope.selectedItems.slice(0, 8).join(", ");
   }, [snapshot.scope.selectedItems]);
+
+  const scheduleContext = useMemo<ScheduleProjectContext>(
+    () => ({
+      projectId: snapshot.id,
+      title: snapshot.overview.title,
+      audience: snapshot.audience,
+      snapshot,
+    }),
+    [snapshot]
+  );
 
   useEffect(() => {
     writeProjectSnapshotToStorage(snapshot);
@@ -296,6 +314,7 @@ export default function SammanfattningPage() {
 
     const actions = buildActionsFromSnapshot(baseSnapshot);
     const files = mapSnapshotFiles(baseSnapshot);
+    const recipients: RequestRecipient[] = defaultRecipientsForAudience("privat");
     const propertySnapshot: RequestPropertySnapshot = {
       audience: "privat",
       title: baseSnapshot.overview.title,
@@ -331,12 +350,14 @@ export default function SammanfattningPage() {
       propertySnapshot,
       documentSummary: buildDocumentSummary(files),
       files,
+      recipients,
+      distribution: recipients.map((recipient) => toRecipientLabel(recipient)),
     };
 
     saveRequest(nextRequest);
     setSendValidationErrors([]);
     setRequestNotice(
-      `Förfrågan skickad (${nextRequest.id}). Entreprenörsvyn uppdateras direkt.`
+      `Förfrågan skickad (${nextRequest.id}). Se status och mottagare under Mina förfrågningar.`
     );
   };
 
@@ -423,6 +444,18 @@ export default function SammanfattningPage() {
               >
                 Skicka förfrågan
               </button>
+              <Link
+                href={requestsHref}
+                className="rounded-2xl border-2 border-[#D9D1C6] bg-[#FAF8F5] px-6 py-3 text-sm font-semibold text-[#6B5A47] outline-none transition-all hover:bg-white focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
+              >
+                Mina förfrågningar
+              </Link>
+              <Link
+                href={`/timeline?projectId=${encodeURIComponent(snapshot.id)}`}
+                className="rounded-2xl border-2 border-[#D9D1C6] bg-white px-6 py-3 text-sm font-semibold text-[#6B5A47] outline-none transition-all hover:bg-[#FAF8F5] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
+              >
+                Open Timeline
+              </Link>
               <span className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
                 Snapshot-ID: {snapshot.id}
               </span>
@@ -452,6 +485,15 @@ export default function SammanfattningPage() {
               </Notice>
             )}
           </Card>
+
+          <div className="mt-6">
+            <SchedulePreviewCard
+              context={scheduleContext}
+              heading="Generated schedule preview"
+              description="Auto-fylld pre/build/post-plan som du kan redigera i Timeline."
+              maxTasks={12}
+            />
+          </div>
 
           <Card className={`mt-6 border-2 ${RISK_COLORS[snapshot.riskProfile.level]}`}>
             <h2 className="mb-2 text-lg font-bold">Riskprofil</h2>

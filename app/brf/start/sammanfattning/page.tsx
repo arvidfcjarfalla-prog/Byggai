@@ -38,7 +38,13 @@ import {
   type ProjectSnapshot,
   writeProjectSnapshotToStorage,
 } from "../../../lib/project-snapshot";
-import { saveRequest, type PlatformRequest, type RequestFileRecord } from "../../../lib/requests-store";
+import {
+  defaultRecipientsForAudience,
+  saveRequest,
+  toRecipientLabel,
+  type PlatformRequest,
+  type RequestFileRecord,
+} from "../../../lib/requests-store";
 
 function readBrfFiles(): BrfFileRecord[] {
   if (typeof window === "undefined") return [];
@@ -325,6 +331,7 @@ export default function BrfStartSammanfattningPage() {
 
     setSnapshotSeed(lockedSnapshot);
     writeProjectSnapshotToStorage(lockedSnapshot);
+    const recipients = defaultRecipientsForAudience("brf");
 
     const request: PlatformRequest = {
       id: `req-${Date.now()}`,
@@ -370,11 +377,13 @@ export default function BrfStartSammanfattningPage() {
           : "Inga uppladdade filer",
       riskProfile: toSwedishRiskLabel(lockedSnapshot.riskProfile.level),
       actions: selectedProcActions,
+      recipients,
+      distribution: recipients.map((recipient) => toRecipientLabel(recipient)),
     };
 
     saveRequest(request);
     setGateErrors([]);
-    setSuccessMessage("Förfrågan skickad. Entreprenörsinkorgen är uppdaterad.");
+    setSuccessMessage("Förfrågan skickad. Gå till Mina förfrågningar för status och kompletteringar.");
   };
 
   return (
@@ -582,10 +591,10 @@ export default function BrfStartSammanfattningPage() {
                 Skicka till entreprenörer
               </button>
               <Link
-                href="/dashboard/entreprenor/forfragningar"
+                href="/dashboard/brf/forfragningar"
                 className="inline-flex w-full items-center justify-center rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
               >
-                Öppna entreprenörsinkorg
+                Öppna mina förfrågningar
               </Link>
             </div>
           </Card>

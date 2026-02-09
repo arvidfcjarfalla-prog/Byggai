@@ -8,6 +8,7 @@ import {
 
 export type RequestAudience = "brf" | "privat";
 export type RequestStatus = "draft" | "sent" | "received";
+export type RequestRecipientStatus = "sent" | "opened" | "responded" | "declined";
 
 export interface ProcurementActionDetail {
   label: string;
@@ -74,6 +75,15 @@ export interface RequestScopeItem {
   details?: string;
 }
 
+export interface RequestRecipient {
+  id: string;
+  companyName: string;
+  contactName?: string;
+  email?: string;
+  status: RequestRecipientStatus;
+  sentAt: string;
+}
+
 export interface PlatformRequest {
   id: string;
   createdAt: string;
@@ -96,6 +106,7 @@ export interface PlatformRequest {
   missingInfo: string[];
   replyDeadline?: string;
   distribution?: string[];
+  recipients?: RequestRecipient[];
 
   // Backwards compatibility for already-built views.
   actions?: ProcurementAction[];
@@ -147,6 +158,162 @@ function mapLegacySnapshotFile(file: ProjectSnapshotFile): RequestFileRecord {
     sourceLabel: "ProjectSnapshot",
     tags: [...file.tags],
   };
+}
+
+function normalizeRecipientStatus(raw: unknown): RequestRecipientStatus {
+  if (raw === "opened" || raw === "responded" || raw === "declined") return raw;
+  return "sent";
+}
+
+function toRecipientId(input: string): string {
+  const normalized = input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized : `recipient-${Date.now()}`;
+}
+
+function parseDistributionLabel(label: string): {
+  companyName: string;
+  email?: string;
+} {
+  const trimmed = label.trim();
+  const angleEmailMatch = trimmed.match(/^(.*)<([^>]+)>$/);
+  if (angleEmailMatch) {
+    return {
+      companyName: angleEmailMatch[1].trim() || "Entreprenör",
+      email: angleEmailMatch[2].trim(),
+    };
+  }
+
+  const pipeSplit = trimmed.split("|");
+  if (pipeSplit.length >= 2) {
+    return {
+      companyName: pipeSplit[0]?.trim() || "Entreprenör",
+      email: pipeSplit.slice(1).join("|").trim() || undefined,
+    };
+  }
+
+  return { companyName: trimmed || "Entreprenör" };
+}
+
+function normalizeRecipients(
+  rawRecipients: unknown,
+  distribution: string[],
+  createdAt: string
+): RequestRecipient[] {
+  const fromRecipients = Array.isArray(rawRecipients)
+    ? rawRecipients
+        .map((entry, index) => {
+          if (!isObject(entry)) return undefined;
+          const companyName =
+            typeof entry.companyName === "string" && entry.companyName.trim().length > 0
+              ? entry.companyName.trim()
+              : "Entreprenör";
+          const email =
+            typeof entry.email === "string" && entry.email.trim().length > 0
+              ? entry.email.trim()
+              : undefined;
+          const contactName =
+            typeof entry.contactName === "string" && entry.contactName.trim().length > 0
+              ? entry.contactName.trim()
+              : undefined;
+          const id =
+            typeof entry.id === "string" && entry.id.trim().length > 0
+              ? entry.id
+              : toRecipientId(`${companyName}-${email ?? index}`);
+          const recipient: RequestRecipient = {
+            id,
+            companyName,
+            status: normalizeRecipientStatus(entry.status),
+            sentAt:
+              typeof entry.sentAt === "string" && entry.sentAt.length > 0
+                ? entry.sentAt
+                : createdAt,
+          };
+          if (contactName) recipient.contactName = contactName;
+          if (email) recipient.email = email;
+          return recipient;
+        })
+        .filter((entry): entry is RequestRecipient => entry !== undefined)
+    : [];
+
+  if (fromRecipients.length > 0) return fromRecipients;
+
+  if (distribution.length > 0) {
+    return distribution.map((label, index) => {
+      const parsed = parseDistributionLabel(label);
+      return {
+        id: toRecipientId(`${parsed.companyName}-${parsed.email ?? index}`),
+        companyName: parsed.companyName,
+        email: parsed.email,
+        status: "sent",
+        sentAt: createdAt,
+      };
+    });
+  }
+
+  return [];
+}
+
+export function toRecipientLabel(recipient: RequestRecipient): string {
+  if (recipient.email) {
+    return `${recipient.companyName} <${recipient.email}>`;
+  }
+  return recipient.companyName;
+}
+
+export function defaultRecipientsForAudience(audience: RequestAudience): RequestRecipient[] {
+  const now = new Date().toISOString();
+  if (audience === "brf") {
+    return [
+      {
+        id: "rec-brf-1",
+        companyName: "Nord Bygg & Renovering AB",
+        email: "anbud@nordbygg.se",
+        status: "sent",
+        sentAt: now,
+      },
+      {
+        id: "rec-brf-2",
+        companyName: "Trygg Fastighetsentreprenad",
+        email: "offert@tryggfastighet.se",
+        status: "sent",
+        sentAt: now,
+      },
+      {
+        id: "rec-brf-3",
+        companyName: "Stad & Stomme Projekt AB",
+        email: "upphandling@stadstomme.se",
+        status: "sent",
+        sentAt: now,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: "rec-pri-1",
+      companyName: "HemmaBygg Entreprenad",
+      email: "offert@hemmabygg.se",
+      status: "sent",
+      sentAt: now,
+    },
+    {
+      id: "rec-pri-2",
+      companyName: "Trygg Renovering i Sverige",
+      email: "projekt@tryggrenovering.se",
+      status: "sent",
+      sentAt: now,
+    },
+    {
+      id: "rec-pri-3",
+      companyName: "Nordic Kök & Bad AB",
+      email: "anbud@nordickokbad.se",
+      status: "sent",
+      sentAt: now,
+    },
+  ];
 }
 
 function normalizeFiles(
@@ -515,6 +682,13 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
         ? formatSnapshotTimeline(snapshot)
         : "Startfönster ej angivet";
 
+  const distribution = Array.isArray(rawInput.distribution)
+    ? rawInput.distribution.filter((item): item is string => typeof item === "string")
+    : [];
+  const recipients = normalizeRecipients(rawInput.recipients, distribution, createdAt);
+  const normalizedDistribution =
+    distribution.length > 0 ? distribution : recipients.map((recipient) => toRecipientLabel(recipient));
+
   const files = normalizeFiles(rawInput.files, snapshot, createdAt);
   const completeness = deriveCompleteness(rawInput, snapshot, scope, files);
   const missingInfo = deriveMissingInfo(rawInput, scope, files);
@@ -558,9 +732,8 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
     missingInfo,
     replyDeadline:
       typeof rawInput.replyDeadline === "string" ? rawInput.replyDeadline : undefined,
-    distribution: Array.isArray(rawInput.distribution)
-      ? rawInput.distribution.filter((item): item is string => typeof item === "string")
-      : undefined,
+    distribution: normalizedDistribution.length > 0 ? normalizedDistribution : undefined,
+    recipients: recipients.length > 0 ? recipients : undefined,
     actions,
     documentationLevel,
     riskProfile,

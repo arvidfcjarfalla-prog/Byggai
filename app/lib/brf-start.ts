@@ -1,4 +1,4 @@
-import type { ProcurementAction } from "./requests-store";
+import type { ProcurementAction, ProcurementActionDetail } from "./requests-store";
 
 export const BRF_ACTIONS_DRAFT_KEY = "byggplattformen-brf-actions-draft";
 export const BRF_ACTIONS_DRAFT_UPDATED_EVENT = "byggplattformen-brf-actions-draft-updated";
@@ -17,6 +17,10 @@ export interface BrfActionDraft {
   estimatedPriceSek?: number;
   emissionsKgCo2e?: number;
   details?: string;
+  rawRow?: string;
+  sourceSheet?: string;
+  sourceRow?: number;
+  extraDetails?: ProcurementActionDetail[];
   selected?: boolean;
 }
 
@@ -91,6 +95,23 @@ export function readBrfActionsDraft(): BrfActionDraft[] {
           ? item.emissionsKgCo2e
           : undefined,
       details: item.details,
+      rawRow: typeof item.rawRow === "string" ? item.rawRow : undefined,
+      sourceSheet: typeof item.sourceSheet === "string" ? item.sourceSheet : undefined,
+      sourceRow:
+        Number.isFinite(item.sourceRow ?? NaN) && (item.sourceRow ?? 0) > 0
+          ? item.sourceRow
+          : undefined,
+      extraDetails: Array.isArray(item.extraDetails)
+        ? item.extraDetails
+            .map((detail) => {
+              if (!detail || typeof detail.label !== "string") return null;
+              return {
+                label: detail.label,
+                value: typeof detail.value === "string" ? detail.value : "",
+              };
+            })
+            .filter((detail): detail is ProcurementActionDetail => detail !== null)
+        : undefined,
       selected: item.selected ?? true,
     }));
 }
@@ -149,6 +170,10 @@ export function toProcurementAction(action: BrfActionDraft): ProcurementAction {
     emissionsKgCo2e: action.emissionsKgCo2e ?? 0,
     source: "local",
     details: action.details,
+    rawRow: action.rawRow,
+    sourceSheet: action.sourceSheet,
+    sourceRow: action.sourceRow,
+    extraDetails: action.extraDetails,
   };
 }
 
@@ -162,6 +187,10 @@ export function fromProcurementAction(action: ProcurementAction): BrfActionDraft
     estimatedPriceSek: action.estimatedPriceSek,
     emissionsKgCo2e: action.emissionsKgCo2e,
     details: action.details,
+    rawRow: action.rawRow,
+    sourceSheet: action.sourceSheet,
+    sourceRow: action.sourceRow,
+    extraDetails: action.extraDetails,
     selected: true,
   };
 }

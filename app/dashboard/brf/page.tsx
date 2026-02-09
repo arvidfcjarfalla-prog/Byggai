@@ -47,6 +47,8 @@ export default function BrfDashboardPage() {
         { href: "/dashboard/brf", label: "Översikt" },
         { href: "/dashboard/brf/fastighet", label: "Fastighet" },
         { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
+        { href: "/timeline", label: "Timeline" },
+        { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
         { href: "/brf/start", label: "Initiera BRF-projekt" },
       ]}
       cards={[
@@ -73,6 +75,18 @@ export default function BrfDashboardPage() {
           body: "Samla protokoll, val av entreprenör och avtalsunderlag i en spårbar beslutslogg.",
           ctaLabel: "Öppna fastighetsvy",
           ctaHref: "/dashboard/brf/fastighet",
+        },
+        {
+          title: "Timeline",
+          body: "Planera pre/build/post och underhåll över flera år i en redigerbar Gantt-tidslinje.",
+          ctaLabel: "Öppna timeline",
+          ctaHref: "/timeline",
+        },
+        {
+          title: "Mina förfrågningar",
+          body: "Se allt som skickats, vilka entreprenörer som fått underlag och komplettera efter utskick.",
+          ctaLabel: "Öppna förfrågningar",
+          ctaHref: "/dashboard/brf/forfragningar",
         },
       ]}
     />

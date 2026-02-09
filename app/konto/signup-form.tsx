@@ -24,7 +24,7 @@ function readRoleFromQueryString(query: string): UserRole | null {
 export function SignupForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signUp, user, ready } = useAuth();
+  const { signUp, signOut, user, ready } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -48,11 +48,22 @@ export function SignupForm() {
     [searchParams]
   );
   const lockRole = roleFromQuery === "privat" || roleFromQuery === "brf" || roleFromQuery === "entreprenor";
+  const activeRole: UserRole = roleFromQuery ?? role;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!roleFromQuery) return;
+    localStorage.setItem(ROLE_STORAGE_KEY, roleFromQuery);
+  }, [roleFromQuery]);
 
   useEffect(() => {
     if (!ready || !user) return;
+    if (roleFromQuery && user.role !== roleFromQuery) {
+      signOut();
+      return;
+    }
     router.replace(getDashboardPath(user.role));
-  }, [ready, router, user]);
+  }, [ready, roleFromQuery, router, signOut, user]);
 
   const roleOptions = useMemo(
     () => [
@@ -67,9 +78,9 @@ export function SignupForm() {
     e.preventDefault();
     setError(null);
     if (typeof window !== "undefined") {
-      localStorage.setItem(ROLE_STORAGE_KEY, role);
+      localStorage.setItem(ROLE_STORAGE_KEY, activeRole);
     }
-    const result = signUp({ email, password, name, role });
+    const result = signUp({ email, password, name, role: activeRole });
     if (!result.ok) {
       setError(result.error);
       return;
@@ -151,7 +162,7 @@ export function SignupForm() {
                       <label
                         key={option.id}
                         className={`rounded-xl border-2 px-3 py-2 text-sm font-medium transition-colors ${
-                          role === option.id
+                          activeRole === option.id
                             ? "border-[#8C7860] bg-[#8C7860]/10 text-[#2A2520]"
                             : "border-[#E8E3DC] text-[#766B60]"
                         } ${lockRole ? "cursor-not-allowed opacity-80" : "cursor-pointer"}`}
@@ -161,7 +172,7 @@ export function SignupForm() {
                           type="radio"
                           name="role"
                           value={option.id}
-                          checked={role === option.id}
+                          checked={activeRole === option.id}
                           onChange={() => setRole(option.id)}
                           disabled={lockRole}
                         />

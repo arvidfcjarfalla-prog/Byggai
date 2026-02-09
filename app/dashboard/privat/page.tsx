@@ -41,6 +41,8 @@ export default function PrivatDashboardPage() {
       navItems={[
         { href: "/dashboard/privat", label: "Översikt" },
         { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
+        { href: "/timeline", label: "Timeline" },
+        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[
@@ -67,6 +69,18 @@ export default function PrivatDashboardPage() {
           body: "Du får en tydlig sammanfattning av osäkerheter innan du skickar förfrågan till entreprenörer.",
           ctaLabel: "Se sammanfattning",
           ctaHref: "/start/sammanfattning",
+        },
+        {
+          title: "Timeline",
+          body: "Visualisera hela projektet i Gantt-format och finjustera datum, beroenden och faser.",
+          ctaLabel: "Öppna timeline",
+          ctaHref: "/timeline",
+        },
+        {
+          title: "Mina förfrågningar",
+          body: "Följ skickade förfrågningar, se mottagande entreprenörer och komplettera underlag.",
+          ctaLabel: "Öppna förfrågningar",
+          ctaHref: "/dashboard/privat/forfragningar",
         },
       ]}
     />

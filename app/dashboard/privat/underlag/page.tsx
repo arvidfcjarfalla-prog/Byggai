@@ -4,13 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
+import { SchedulePreviewCard } from "../../../components/gantt/SchedulePreviewCard";
 import type { BrfFileRecord, BrfFileType } from "../../../lib/brf-workspace";
 import {
   PRIVATE_FILES_KEY,
   PRIVATE_FILES_UPDATED_EVENT,
+  clearWorkspaceFiles,
   getFileExtension,
   getFileTypeLabel,
+  hasWorkspaceFilePayload,
   inferBrfFileType,
+  inferContentGroup,
+  normalizeWorkspaceFileRecord,
+  openWorkspaceFile,
+  readWorkspaceFiles,
+  removeWorkspaceFile,
+  storeWorkspaceFilePayload,
+  structureWorkspaceFiles,
+  writeWorkspaceFiles,
 } from "../../../lib/brf-workspace";
 import type { PrivateHomeProfile } from "../../../lib/workspace-profiles";
 import {
@@ -31,8 +42,9 @@ import {
   toSwedishRiskLabel,
   type ProjectSnapshot,
 } from "../../../lib/project-snapshot";
+import type { ScheduleProjectContext } from "../../../lib/schedule";
 
-type PrivateTab = "home" | "project" | "files";
+type PrivateTab = "home" | "project" | "files" | "timeline";
 
 const PRIVATE_REQUIRED_FIELDS: Array<keyof PrivateHomeProfile> = [
   "projectName",
@@ -97,15 +109,7 @@ function readPrivateProfile(): PrivateHomeProfile {
 }
 
 function readPrivateFiles(): BrfFileRecord[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(PRIVATE_FILES_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as BrfFileRecord[]) : [];
-  } catch {
-    return [];
-  }
+  return readWorkspaceFiles("privat");
 }
 
 function mapSnapshotFiles(snapshot: ProjectSnapshot | null): BrfFileRecord[] {
@@ -118,7 +122,7 @@ function mapSnapshotFiles(snapshot: ProjectSnapshot | null): BrfFileRecord[] {
     sizeKb: file.size ? Number((file.size / 1024).toFixed(1)) : 0,
     uploadedAt: snapshot.createdAt,
     sourceLabel: "ProjectSnapshot",
-  }));
+  })).map(normalizeWorkspaceFileRecord);
 }
 
 function readPrivateSnapshot(): ProjectSnapshot | null {
@@ -141,6 +145,7 @@ export default function PrivatUnderlagPage() {
   const [files, setFiles] = useState<BrfFileRecord[]>(() => readPrivateFiles());
   const [fileQuery, setFileQuery] = useState("");
   const [fileTypeFilter, setFileTypeFilter] = useState<"Alla" | BrfFileType>("Alla");
+  const [fileActionNotice, setFileActionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -185,7 +190,7 @@ export default function PrivatUnderlagPage() {
     () => mapSnapshotFiles(projectSnapshot),
     [projectSnapshot]
   );
-  const manualFiles = useMemo(() => files, [files]);
+  const manualFiles = useMemo(() => files.map(normalizeWorkspaceFileRecord), [files]);
   const allFiles = useMemo(
     () => [...snapshotFiles, ...manualFiles],
     [manualFiles, snapshotFiles]
@@ -232,6 +237,17 @@ export default function PrivatUnderlagPage() {
     [allFiles]
   );
 
+  const groupedManualFiles = useMemo(
+    () =>
+      filteredManualFiles.reduce<Record<string, BrfFileRecord[]>>((acc, file) => {
+        const group = file.contentGroup || inferContentGroup(file.fileType);
+        if (!acc[group]) acc[group] = [];
+        acc[group].push(file);
+        return acc;
+      }, {}),
+    [filteredManualFiles]
+  );
+
   const completeness = useMemo(() => {
     const required = PRIVATE_REQUIRED_FIELDS.map((field) => field as string);
     return completenessPercent(profile as unknown as Record<string, string>, required);
@@ -249,6 +265,15 @@ export default function PrivatUnderlagPage() {
     profile.addressLine,
     `${profile.postalCode} ${profile.city}`.trim(),
   ]);
+  const timelineContext = useMemo<ScheduleProjectContext>(
+    () => ({
+      projectId: projectSnapshot?.id || "privat-underlag-active",
+      title: profile.projectName || projectSnapshot?.overview.title || "Privat projekt",
+      audience: "privat",
+      snapshot: projectSnapshot || undefined,
+    }),
+    [profile.projectName, projectSnapshot]
+  );
 
   const handleDraftChange = <K extends keyof PrivateHomeProfile>(
     field: K,
@@ -277,27 +302,65 @@ export default function PrivatUnderlagPage() {
     setIsEditing(false);
   };
 
-  const addFiles = (fileList: FileList | null) => {
+  const addFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0 || typeof window === "undefined") return;
 
-    const additions: BrfFileRecord[] = Array.from(fileList).map((file) => ({
-      id: `${file.name.toLowerCase()}-${file.size}`,
-      name: file.name,
-      fileType: inferBrfFileType(file.name),
-      extension: getFileExtension(file.name),
-      sizeKb: Number((file.size / 1024).toFixed(1)),
-      uploadedAt: new Date().toISOString(),
-      sourceLabel: "Manuell uppladdning",
-    }));
+    const additions: BrfFileRecord[] = Array.from(fileList).map((file) => {
+      const id = `${file.name.toLowerCase()}-${file.size}`;
+      const fileType = inferBrfFileType(file.name);
+      return normalizeWorkspaceFileRecord({
+        id,
+        name: file.name,
+        fileType,
+        extension: getFileExtension(file.name),
+        sizeKb: Number((file.size / 1024).toFixed(1)),
+        uploadedAt: new Date().toISOString(),
+        sourceLabel: "Manuell uppladdning",
+        mimeType: file.type || undefined,
+      });
+    });
 
-    const updated = [...additions, ...files.filter((item) => !additions.some((a) => a.id === item.id))].slice(
-      0,
-      300
-    );
+    const updated = [
+      ...additions,
+      ...files.filter((item) => !additions.some((a) => a.id === item.id)),
+    ].slice(0, 300);
 
     setFiles(updated);
-    localStorage.setItem(PRIVATE_FILES_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event(PRIVATE_FILES_UPDATED_EVENT));
+    writeWorkspaceFiles("privat", updated);
+    await Promise.all(
+      Array.from(fileList).map((file) =>
+        storeWorkspaceFilePayload("privat", `${file.name.toLowerCase()}-${file.size}`, file)
+      )
+    );
+    setFileActionNotice("Filer uppladdade och strukturerade.");
+  };
+
+  const openFile = (fileId: string) => {
+    const ok = openWorkspaceFile("privat", fileId);
+    if (!ok) {
+      setFileActionNotice(
+        "Filen kan inte öppnas lokalt ännu. Ladda upp den igen om du vill förhandsvisa."
+      );
+      return;
+    }
+    setFileActionNotice(null);
+  };
+
+  const deleteFile = (fileId: string) => {
+    removeWorkspaceFile("privat", fileId);
+    setFileActionNotice("Fil borttagen.");
+  };
+
+  const clearManualFiles = () => {
+    clearWorkspaceFiles("privat");
+    setFiles([]);
+    setFileActionNotice("Alla manuellt uppladdade filer rensades.");
+  };
+
+  const structureManualFiles = () => {
+    const structured = structureWorkspaceFiles("privat");
+    setFiles(structured);
+    setFileActionNotice("Filerna strukturerades efter innehåll.");
   };
 
   if (!ready) {
@@ -324,6 +387,8 @@ export default function PrivatUnderlagPage() {
       navItems={[
         { href: "/dashboard/privat", label: "Översikt" },
         { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
+        { href: "/timeline", label: "Timeline" },
+        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[]}
@@ -401,6 +466,7 @@ export default function PrivatUnderlagPage() {
           { id: "home" as const, label: "Om bostaden" },
           { id: "project" as const, label: "Projektdata" },
           { id: "files" as const, label: "Filer" },
+          { id: "timeline" as const, label: "Timeline" },
         ].map((item) => (
           <button
             key={item.id}
@@ -673,12 +739,34 @@ export default function PrivatUnderlagPage() {
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                  addFiles(event.target.files);
+                  void addFiles(event.target.files);
                   event.currentTarget.value = "";
                 }}
               />
             </label>
+            <button
+              type="button"
+              onClick={structureManualFiles}
+              disabled={manualFiles.length === 0}
+              className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Strukturera efter innehåll
+            </button>
+            <button
+              type="button"
+              onClick={clearManualFiles}
+              disabled={manualFiles.length === 0}
+              className="rounded-xl border border-[#E8D4BF] bg-white px-4 py-2 text-sm font-semibold text-[#8A5B2A] hover:bg-[#FFF5EA] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Rensa manuella filer
+            </button>
           </div>
+
+          {fileActionNotice && (
+            <p className="mb-4 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-4 py-3 text-sm text-[#6B5A47]">
+              {fileActionNotice}
+            </p>
+          )}
 
           <div className="mb-4 flex flex-wrap gap-2">
             {fileTypeOptions.map((type) => (
@@ -711,6 +799,7 @@ export default function PrivatUnderlagPage() {
                       <th className="px-3 py-3">Filstorlek</th>
                       <th className="px-3 py-3">Källa</th>
                       <th className="px-3 py-3">Uppladdad</th>
+                      <th className="px-3 py-3">Åtgärd</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -726,6 +815,17 @@ export default function PrivatUnderlagPage() {
                         <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
                         <td className="px-3 py-3">{file.sourceLabel}</td>
                         <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                        <td className="px-3 py-3">
+                          <button
+                            type="button"
+                            onClick={() => openFile(file.id)}
+                            className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            {hasWorkspaceFilePayload("privat", file.id)
+                              ? "Öppna"
+                              : "Öppna (saknas lokalt)"}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -754,6 +854,7 @@ export default function PrivatUnderlagPage() {
                       <th className="px-3 py-3">Filstorlek</th>
                       <th className="px-3 py-3">Källa</th>
                       <th className="px-3 py-3">Uppladdad</th>
+                      <th className="px-3 py-3">Åtgärd</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -769,6 +870,26 @@ export default function PrivatUnderlagPage() {
                         <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
                         <td className="px-3 py-3">{file.sourceLabel}</td>
                         <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openFile(file.id)}
+                              className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                            >
+                              {hasWorkspaceFilePayload("privat", file.id)
+                                ? "Öppna"
+                                : "Öppna (saknas lokalt)"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteFile(file.id)}
+                              className="rounded-lg border border-[#E8D4BF] bg-white px-3 py-1.5 text-xs font-semibold text-[#8A5B2A] hover:bg-[#FFF5EA]"
+                            >
+                              Ta bort
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -776,6 +897,65 @@ export default function PrivatUnderlagPage() {
               </div>
             )}
           </article>
+
+          {Object.keys(groupedManualFiles).length > 0 && (
+            <article className="mt-4 rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+              <h3 className="text-sm font-semibold text-[#2A2520]">
+                Strukturerad filvy (efter innehåll)
+              </h3>
+              <div className="mt-3 space-y-3">
+                {Object.entries(groupedManualFiles)
+                  .sort(([a], [b]) => a.localeCompare(b, "sv"))
+                  .map(([group, groupFiles]) => (
+                    <div key={group} className="rounded-xl border border-[#E8E3DC] bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                        {group} ({groupFiles.length})
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {groupFiles.map((file) => (
+                          <div
+                            key={`group-${file.id}`}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#EFE8DD] px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#2A2520]">{file.name}</p>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {(file.tags || []).slice(0, 5).map((tag) => (
+                                  <span
+                                    key={`${file.id}-${tag}`}
+                                    className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-0.5 text-[11px] font-semibold text-[#6B5A47]"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openFile(file.id)}
+                              className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                            >
+                              Öppna fil
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </article>
+          )}
+        </section>
+      )}
+
+      {tab === "timeline" && (
+        <section className="space-y-4">
+          <SchedulePreviewCard
+            context={timelineContext}
+            heading="Projektets tidsplan"
+            description="Auto-genererad från snapshot och underlag. Gå till Timeline för full redigering."
+            maxTasks={14}
+          />
         </section>
       )}
     </DashboardShell>

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
+import { SchedulePreviewCard } from "../../../components/gantt/SchedulePreviewCard";
 import type {
   EntrepreneurRequest,
   ProcurementAction,
@@ -18,9 +19,19 @@ import type { BrfFileRecord, BrfFileType } from "../../../lib/brf-workspace";
 import {
   BRF_FILES_KEY,
   BRF_FILES_UPDATED_EVENT,
+  clearWorkspaceFiles,
   getFileExtension,
   getFileTypeLabel,
+  hasWorkspaceFilePayload,
   inferBrfFileType,
+  inferContentGroup,
+  normalizeWorkspaceFileRecord,
+  openWorkspaceFile,
+  readWorkspaceFiles,
+  removeWorkspaceFile,
+  storeWorkspaceFilePayload,
+  structureWorkspaceFiles,
+  writeWorkspaceFiles,
 } from "../../../lib/brf-workspace";
 import type { BrfPropertyProfile } from "../../../lib/workspace-profiles";
 import {
@@ -41,8 +52,9 @@ import {
   toSwedishRiskLabel,
   type ProjectSnapshot,
 } from "../../../lib/project-snapshot";
+import type { ScheduleProjectContext } from "../../../lib/schedule";
 
-type PropertyTab = "overview" | "components" | "files";
+type PropertyTab = "overview" | "components" | "files" | "timeline";
 
 type ComponentRow = {
   id: string;
@@ -157,15 +169,7 @@ function formatInteger(value: string): string {
 }
 
 function readBrfFiles(): BrfFileRecord[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(BRF_FILES_KEY);
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as BrfFileRecord[]) : [];
-  } catch {
-    return [];
-  }
+  return readWorkspaceFiles("brf");
 }
 
 function readProfile(): BrfPropertyProfile {
@@ -230,6 +234,7 @@ export default function BrfFastighetPage() {
   const [componentYearFilter, setComponentYearFilter] = useState("alla");
   const [fileQuery, setFileQuery] = useState("");
   const [fileTypeFilter, setFileTypeFilter] = useState<"Alla" | BrfFileType>("Alla");
+  const [fileActionNotice, setFileActionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -319,11 +324,12 @@ export default function BrfFastighetPage() {
         sourceLabel: "ProjectSnapshot",
         linkedActionTitle: undefined,
       }))
+        .map(normalizeWorkspaceFileRecord)
     : [];
 
   const manualFiles = [...(files.length > 0 ? files : FALLBACK_FILES)].sort((a, b) =>
     b.uploadedAt.localeCompare(a.uploadedAt)
-  );
+  ).map(normalizeWorkspaceFileRecord);
   const allFiles = [...snapshotFiles, ...manualFiles];
 
   const fileTypeOptions = Array.from(new Set(allFiles.map((file) => file.fileType))).sort((a, b) =>
@@ -364,6 +370,16 @@ export default function BrfFastighetPage() {
     return acc;
   }, {});
 
+  const groupedManualFiles = filteredManualFiles.reduce<Record<string, BrfFileRecord[]>>(
+    (acc, file) => {
+      const group = file.contentGroup || inferContentGroup(file.fileType);
+      if (!acc[group]) acc[group] = [];
+      acc[group].push(file);
+      return acc;
+    },
+    {}
+  );
+
   const profileCompleteness = useMemo(() => {
     const required = PROFILE_REQUIRED_FIELDS.map((field) => field as string);
     return completenessPercent(profile as unknown as Record<string, string>, required);
@@ -381,6 +397,21 @@ export default function BrfFastighetPage() {
     profile.addressLine,
     `${profile.postalCode} ${profile.city}`.trim(),
   ]);
+  const timelineContext: ScheduleProjectContext = {
+    projectId: latestRequest?.id || effectiveSnapshot?.id || "brf-fastighet-active",
+    title: latestRequest?.title || profile.propertyName || "BRF-projekt",
+    audience: "brf",
+    snapshot: effectiveSnapshot || undefined,
+    request: latestRequest || undefined,
+    maintenanceActions: actions.map((action) => ({
+      id: action.id,
+      title: action.title,
+      category: action.category,
+      status: action.status,
+      plannedYear: action.plannedYear,
+      details: action.details,
+    })),
+  };
 
   const handleDraftChange = <K extends keyof BrfPropertyProfile>(
     field: K,
@@ -409,26 +440,64 @@ export default function BrfFastighetPage() {
     setIsEditing(false);
   };
 
-  const addFiles = (fileList: FileList | null) => {
+  const addFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0 || typeof window === "undefined") return;
-    const additions: BrfFileRecord[] = Array.from(fileList).map((file) => ({
-      id: `${file.name.toLowerCase()}-${file.size}`,
-      name: file.name,
-      fileType: inferBrfFileType(file.name),
-      extension: getFileExtension(file.name),
-      sizeKb: Number((file.size / 1024).toFixed(1)),
-      uploadedAt: new Date().toISOString(),
-      sourceLabel: "Manuell uppladdning",
-    }));
+    const additions: BrfFileRecord[] = Array.from(fileList).map((file) => {
+      const id = `${file.name.toLowerCase()}-${file.size}`;
+      const fileType = inferBrfFileType(file.name);
+      return normalizeWorkspaceFileRecord({
+        id,
+        name: file.name,
+        fileType,
+        extension: getFileExtension(file.name),
+        sizeKb: Number((file.size / 1024).toFixed(1)),
+        uploadedAt: new Date().toISOString(),
+        sourceLabel: "Manuell uppladdning",
+        mimeType: file.type || undefined,
+      });
+    });
 
-    const updated = [...additions, ...files.filter((item) => !additions.some((a) => a.id === item.id))].slice(
-      0,
-      300
-    );
+    const updated = [
+      ...additions,
+      ...files.filter((item) => !additions.some((a) => a.id === item.id)),
+    ].slice(0, 300);
 
     setFiles(updated);
-    localStorage.setItem(BRF_FILES_KEY, JSON.stringify(updated));
-    window.dispatchEvent(new Event(BRF_FILES_UPDATED_EVENT));
+    writeWorkspaceFiles("brf", updated);
+    await Promise.all(
+      Array.from(fileList).map((file) =>
+        storeWorkspaceFilePayload("brf", `${file.name.toLowerCase()}-${file.size}`, file)
+      )
+    );
+    setFileActionNotice("Filer uppladdade och strukturerade.");
+  };
+
+  const openFile = (fileId: string) => {
+    const ok = openWorkspaceFile("brf", fileId);
+    if (!ok) {
+      setFileActionNotice(
+        "Filen kunde inte öppnas lokalt. Ladda upp den manuellt för att kunna förhandsvisa."
+      );
+      return;
+    }
+    setFileActionNotice(null);
+  };
+
+  const deleteFile = (fileId: string) => {
+    removeWorkspaceFile("brf", fileId);
+    setFileActionNotice("Fil borttagen.");
+  };
+
+  const clearManualFiles = () => {
+    clearWorkspaceFiles("brf");
+    setFiles([]);
+    setFileActionNotice("Alla manuellt uppladdade filer rensades.");
+  };
+
+  const structureManualFiles = () => {
+    const structured = structureWorkspaceFiles("brf");
+    setFiles(structured);
+    setFileActionNotice("Filerna strukturerades efter innehåll.");
   };
 
   if (!ready) {
@@ -456,6 +525,8 @@ export default function BrfFastighetPage() {
         { href: "/dashboard/brf", label: "Översikt" },
         { href: "/dashboard/brf/fastighet", label: "Fastighet" },
         { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
+        { href: "/timeline", label: "Timeline" },
+        { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
         { href: "/brf/start", label: "Initiera BRF-projekt" },
       ]}
       cards={[]}
@@ -554,6 +625,7 @@ export default function BrfFastighetPage() {
           { id: "overview" as const, label: "Om fastigheten" },
           { id: "components" as const, label: "Komponenter" },
           { id: "files" as const, label: "Filer" },
+          { id: "timeline" as const, label: "Timeline" },
         ].map((item) => (
           <button
             key={item.id}
@@ -909,12 +981,34 @@ export default function BrfFastighetPage() {
                 multiple
                 className="hidden"
                 onChange={(event) => {
-                  addFiles(event.target.files);
+                  void addFiles(event.target.files);
                   event.currentTarget.value = "";
                 }}
               />
             </label>
+            <button
+              type="button"
+              onClick={structureManualFiles}
+              disabled={manualFiles.length === 0}
+              className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Strukturera efter innehåll
+            </button>
+            <button
+              type="button"
+              onClick={clearManualFiles}
+              disabled={manualFiles.length === 0}
+              className="rounded-xl border border-[#E8D4BF] bg-white px-4 py-2 text-sm font-semibold text-[#8A5B2A] hover:bg-[#FFF5EA] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Rensa manuella filer
+            </button>
           </div>
+
+          {fileActionNotice && (
+            <p className="mb-4 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-4 py-3 text-sm text-[#6B5A47]">
+              {fileActionNotice}
+            </p>
+          )}
 
           <div className="mb-4 flex flex-wrap gap-2">
             {fileTypeOptions.map((fileType) => (
@@ -947,6 +1041,7 @@ export default function BrfFastighetPage() {
                       <th className="px-3 py-3">Filstorlek</th>
                       <th className="px-3 py-3">Källa</th>
                       <th className="px-3 py-3">Uppladdad</th>
+                      <th className="px-3 py-3">Åtgärd</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -962,6 +1057,17 @@ export default function BrfFastighetPage() {
                         <td className="px-3 py-3">{file.sizeKb > 0 ? `${file.sizeKb} KB` : "—"}</td>
                         <td className="px-3 py-3">{file.sourceLabel}</td>
                         <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                        <td className="px-3 py-3">
+                          <button
+                            type="button"
+                            onClick={() => openFile(file.id)}
+                            className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            {hasWorkspaceFilePayload("brf", file.id)
+                              ? "Öppna"
+                              : "Öppna (saknas lokalt)"}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -991,6 +1097,7 @@ export default function BrfFastighetPage() {
                       <th className="px-3 py-3">Källa</th>
                       <th className="px-3 py-3">Kopplad åtgärd</th>
                       <th className="px-3 py-3">Uppladdad</th>
+                      <th className="px-3 py-3">Åtgärd</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1007,6 +1114,26 @@ export default function BrfFastighetPage() {
                         <td className="px-3 py-3">{file.sourceLabel}</td>
                         <td className="px-3 py-3">{file.linkedActionTitle || "—"}</td>
                         <td className="px-3 py-3">{formatDate(file.uploadedAt)}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openFile(file.id)}
+                              className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                            >
+                              {hasWorkspaceFilePayload("brf", file.id)
+                                ? "Öppna"
+                                : "Öppna (saknas lokalt)"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteFile(file.id)}
+                              className="rounded-lg border border-[#E8D4BF] bg-white px-3 py-1.5 text-xs font-semibold text-[#8A5B2A] hover:bg-[#FFF5EA]"
+                            >
+                              Ta bort
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1014,6 +1141,65 @@ export default function BrfFastighetPage() {
               </div>
             )}
           </article>
+
+          {Object.keys(groupedManualFiles).length > 0 && (
+            <article className="mt-4 rounded-2xl border border-[#EFE8DD] bg-[#FAF8F5] p-4">
+              <h3 className="text-sm font-semibold text-[#2A2520]">
+                Strukturerad filvy (efter innehåll)
+              </h3>
+              <div className="mt-3 space-y-3">
+                {Object.entries(groupedManualFiles)
+                  .sort(([a], [b]) => a.localeCompare(b, "sv"))
+                  .map(([group, groupFiles]) => (
+                    <div key={group} className="rounded-xl border border-[#E8E3DC] bg-white p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                        {group} ({groupFiles.length})
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {groupFiles.map((file) => (
+                          <div
+                            key={`group-${file.id}`}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#EFE8DD] px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#2A2520]">{file.name}</p>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {(file.tags || []).slice(0, 5).map((tag) => (
+                                  <span
+                                    key={`${file.id}-${tag}`}
+                                    className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-2 py-0.5 text-[11px] font-semibold text-[#6B5A47]"
+                                  >
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openFile(file.id)}
+                              className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                            >
+                              Öppna fil
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </article>
+          )}
+        </section>
+      )}
+
+      {tab === "timeline" && (
+        <section className="space-y-4">
+          <SchedulePreviewCard
+            context={timelineContext}
+            heading="Fastighetens tidsplan"
+            description="Auto-genererad plan från underhållsdata och projektunderlag. Full redigering finns i Timeline."
+            maxTasks={16}
+          />
         </section>
       )}
     </DashboardShell>
