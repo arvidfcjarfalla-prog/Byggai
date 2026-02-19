@@ -4,9 +4,9 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
-import { BrfUploadWorkspace } from "../../../start/upload/page";
+import { DocumentsInboxPanel } from "../../../components/documents-inbox-panel";
 
-export default function BrfUnderhallsplanPage() {
+export default function BrfDokumentinkorgPage() {
   const router = useRouter();
   const { user, ready } = useAuth();
 
@@ -20,30 +20,21 @@ export default function BrfUnderhallsplanPage() {
       router.replace("/dashboard/privat");
       return;
     }
-    if (user.role === "entreprenor") router.replace("/dashboard/entreprenor");
+    if (user.role === "entreprenor") {
+      router.replace("/dashboard/entreprenor");
+    }
   }, [ready, router, user]);
 
-  if (!ready) {
-    return (
-      <main className="min-h-screen bg-[#F6F3EE] text-[#2A2520] antialiased">
-        <div className="mx-auto flex min-h-screen max-w-[1400px] items-center justify-center px-6">
-          <p className="rounded-xl border border-[#E6DFD6] bg-white px-4 py-2 text-sm text-[#6B5A47]">
-            Laddar konto...
-          </p>
-        </div>
-      </main>
-    );
-  }
-
+  if (!ready) return null;
   if (!user) return null;
 
   return (
     <DashboardShell
       roleLabel="Bostadsrättsförening"
-      heading="Underhållsplan och åtgärdslista"
-      subheading="Ladda upp underhållsplan, granska extraherade åtgärder och skicka strukturerade förfrågningar."
-      startProjectHref="/dashboard/brf/underhallsplan"
-      startProjectLabel="Underhållsplan"
+      heading="Avtalsinkorg"
+      subheading="Här hittar du avtal, offerter och ÄTA-dokument som entreprenörer har skickat till föreningen."
+      startProjectHref="/brf/start/sammanfattning"
+      startProjectLabel="Skapa ny förfrågan"
       navItems={[
         { href: "/dashboard/brf", label: "Översikt" },
         { href: "/dashboard/brf/fastighet", label: "Fastighet" },
@@ -55,7 +46,7 @@ export default function BrfUnderhallsplanPage() {
       ]}
       cards={[]}
     >
-      <BrfUploadWorkspace embedded />
+      <DocumentsInboxPanel audience="brf" />
     </DashboardShell>
   );
 }

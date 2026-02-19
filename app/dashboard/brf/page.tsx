@@ -49,6 +49,7 @@ export default function BrfDashboardPage() {
         { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
         { href: "/timeline", label: "Timeline" },
         { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
+        { href: "/dashboard/brf/dokumentinkorg", label: "Avtalsinkorg" },
         { href: "/brf/start", label: "Initiera BRF-projekt" },
       ]}
       cards={[

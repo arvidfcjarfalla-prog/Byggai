@@ -14,6 +14,7 @@ import {
   sendRequestMessage,
   subscribeRequestMessages,
   type ConversationActorRole,
+  type RequestMessageType,
 } from "../lib/request-messages";
 
 interface RequestMessagesPanelProps {
@@ -23,6 +24,8 @@ interface RequestMessagesPanelProps {
   headline?: string;
   description?: string;
   onMessageSent?: () => void;
+  allowedMessageTypes?: RequestMessageType[];
+  hideComposer?: boolean;
 }
 
 function formatDate(iso: string): string {
@@ -44,6 +47,8 @@ export function RequestMessagesPanel({
   headline = "Meddelanden",
   description = "Kommunicera direkt i tråden.",
   onMessageSent,
+  allowedMessageTypes,
+  hideComposer = false,
 }: RequestMessagesPanelProps) {
   const [draft, setDraft] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -59,6 +64,11 @@ export function RequestMessagesPanel({
   }, [requestId]);
 
   const unreadForActor = conversation.unreadByRole[actorRole] || 0;
+
+  const visibleMessages =
+    allowedMessageTypes && allowedMessageTypes.length > 0
+      ? conversation.messages.filter((message) => allowedMessageTypes.includes(message.messageType))
+      : conversation.messages;
 
   useEffect(() => {
     if (unreadForActor > 0) {
@@ -130,13 +140,13 @@ export function RequestMessagesPanel({
       </div>
 
       <div className="mt-4 h-[460px] space-y-3 overflow-y-auto rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
-        {conversation.messages.length === 0 && (
+        {visibleMessages.length === 0 && (
           <p className="rounded-xl border border-dashed border-[#D9D1C6] bg-white px-3 py-3 text-sm text-[#6B5A47]">
             Ingen kommunikation ännu. Skicka första meddelandet för att starta dialogen.
           </p>
         )}
 
-        {conversation.messages.map((message) => {
+        {visibleMessages.map((message) => {
           const fromActor = message.authorRole === actorRole;
           return (
             <div
@@ -207,63 +217,65 @@ export function RequestMessagesPanel({
         })}
       </div>
 
-      <div className="mt-4 space-y-3 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
-        <label className="block text-xs font-semibold text-[#6B5A47]">
-          Skriv meddelande
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={4}
-            placeholder="Skriv här..."
-            className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
-          />
-        </label>
+      {!hideComposer && (
+        <div className="mt-4 space-y-3 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
+          <label className="block text-xs font-semibold text-[#6B5A47]">
+            Skriv meddelande
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={4}
+              placeholder="Skriv här..."
+              className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
+            />
+          </label>
 
-        <label className="inline-flex cursor-pointer items-center rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]">
-          Bifoga filer
-          <input
-            type="file"
-            multiple
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-            onChange={handleFileSelection}
-            className="sr-only"
-          />
-          <span className="ml-2 text-[#8C7860]">{files.length > 0 ? `${files.length} valda` : "valfritt"}</span>
-        </label>
+          <label className="inline-flex cursor-pointer items-center rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]">
+            Bifoga filer
+            <input
+              type="file"
+              multiple
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+              onChange={handleFileSelection}
+              className="sr-only"
+            />
+            <span className="ml-2 text-[#8C7860]">{files.length > 0 ? `${files.length} valda` : "valfritt"}</span>
+          </label>
 
-        {files.length > 0 && (
-          <div className="rounded-xl border border-[#E8E3DC] bg-white p-2">
-            <ul className="space-y-1">
-              {files.map((file, index) => (
-                <li
-                  key={`${file.name}-${file.lastModified}-${index}`}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-[#EFE8DD] bg-[#FAF8F5] px-2 py-1 text-xs"
-                >
-                  <span className="min-w-0 truncate text-[#2A2520]">{file.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeFile(index)}
-                    className="rounded-md border border-[#D9D1C6] px-2 py-0.5 font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+          {files.length > 0 && (
+            <div className="rounded-xl border border-[#E8E3DC] bg-white p-2">
+              <ul className="space-y-1">
+                {files.map((file, index) => (
+                  <li
+                    key={`${file.name}-${file.lastModified}-${index}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-[#EFE8DD] bg-[#FAF8F5] px-2 py-1 text-xs"
                   >
-                    Ta bort
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+                    <span className="min-w-0 truncate text-[#2A2520]">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(index)}
+                      className="rounded-md border border-[#D9D1C6] px-2 py-0.5 font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                    >
+                      Ta bort
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={isSending}
-            className="rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#6B5A47] disabled:cursor-not-allowed disabled:opacity-70"
-          >
-            {isSending ? "Skickar..." : "Skicka meddelande"}
-          </button>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={isSending}
+              className="rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#6B5A47] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSending ? "Skickar..." : "Skicka meddelande"}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {error && (
         <p className="mt-3 rounded-xl border border-[#F0E3D0] bg-[#FFF9F1] px-3 py-2 text-sm text-[#6B5A47]">

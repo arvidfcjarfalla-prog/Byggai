@@ -43,6 +43,7 @@ export default function PrivatDashboardPage() {
         { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
         { href: "/timeline", label: "Timeline" },
         { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
+        { href: "/dashboard/privat/dokumentinkorg", label: "Dokumentinkorg" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[

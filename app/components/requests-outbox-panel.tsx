@@ -17,7 +17,13 @@ function statusLabel(status: PlatformRequest["status"]): string {
   return "Skickad";
 }
 
-export function RequestsOutboxPanel({ audience }: { audience: RequestAudience }) {
+export function RequestsOutboxPanel({
+  audience,
+  mode = "messages",
+}: {
+  audience: RequestAudience;
+  mode?: "messages" | "documents";
+}) {
   const { user } = useAuth();
   const [requests, setRequests] = useState<PlatformRequest[]>([]);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
@@ -42,9 +48,9 @@ export function RequestsOutboxPanel({ audience }: { audience: RequestAudience })
   if (requests.length === 0) {
     return (
       <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
-        <h2 className="text-xl font-bold text-[#2A2520]">Inkorg</h2>
+        <h2 className="text-xl font-bold text-[#2A2520]">{mode === "documents" ? "Dokumentinkorg" : "Inkorg"}</h2>
         <p className="mt-2 text-sm text-[#766B60]">
-          Inga förfrågningar ännu. När du skickar en förfrågan öppnas meddelandetråden här.
+          Inga förfrågningar ännu. När du skickar en förfrågan öppnas inkorgen här.
         </p>
       </section>
     );
@@ -63,18 +69,20 @@ export function RequestsOutboxPanel({ audience }: { audience: RequestAudience })
         selectedRequestId={selectedRequestId}
         actorRole={actorRole}
         onSelectRequest={setActiveRequestId}
-        title="Inkorg · Meddelanden"
+        title={mode === "documents" ? "Avtalsinkorg · Dokument" : "Inkorg · Meddelanden"}
       />
 
       {selectedRequest && (
         <main>
           <RequestMessagesPanel
-            key={`request-messages-${selectedRequest.id}`}
+            key={`request-messages-${selectedRequest.id}-${mode}`}
             requestId={selectedRequest.id}
             actorRole={actorRole}
             actorLabel={actorLabel}
-            headline={selectedRequest.title}
+            headline={mode === "documents" ? `${selectedRequest.title} · Dokumentinkorg` : selectedRequest.title}
             description={`${selectedRequest.location} · ${statusLabel(selectedRequest.status)} · Förfrågan-ID: ${selectedRequest.id}`}
+            allowedMessageTypes={mode === "documents" ? ["document"] : undefined}
+            hideComposer={mode === "documents"}
           />
         </main>
       )}

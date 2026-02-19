@@ -96,6 +96,7 @@ export default function EntreprenorForfragningarPage() {
         { href: "/dashboard/entreprenor", label: "Översikt" },
         { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
         { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
+        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
       ]}
       cards={[]}
     >

@@ -43,6 +43,7 @@ export interface SendRequestMessageInput {
   body: string;
   messageType: RequestMessageType;
   attachments?: RequestMessageAttachment[];
+  targetRoles?: ConversationActorRole[];
 }
 
 export interface AttachmentConversionResult {
@@ -282,7 +283,12 @@ export function sendRequestMessage(input: SendRequestMessageInput): RequestMessa
     [input.authorRole]: 0,
   };
 
-  unreadTargetRoles(input.authorRole).forEach((role) => {
+  const targetRoles =
+    input.targetRoles && input.targetRoles.length > 0
+      ? input.targetRoles
+      : unreadTargetRoles(input.authorRole);
+
+  targetRoles.forEach((role) => {
     nextUnread[role] = (nextUnread[role] || 0) + 1;
   });
 
