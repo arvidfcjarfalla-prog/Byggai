@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../../../components/auth-context";
@@ -12,17 +13,13 @@ import {
 } from "../../../lib/project-snapshot";
 
 function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("sv-SE", {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  return parsed.toLocaleDateString("sv-SE", {
     year: "numeric",
     month: "short",
     day: "numeric",
   });
-}
-
-function formatSek(value: number): string {
-  return `${new Intl.NumberFormat("sv-SE").format(value)} kr`;
 }
 
 function requestStatusLabel(status: PlatformRequest["status"]): string {
@@ -31,14 +28,17 @@ function requestStatusLabel(status: PlatformRequest["status"]): string {
   return "Skickad";
 }
 
+function formatSek(value: number): string {
+  return `${new Intl.NumberFormat("sv-SE").format(value)} kr`;
+}
+
 export default function EntreprenorForfragningarPage() {
   const router = useRouter();
   const { user, ready } = useAuth();
-  const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [incomingRequests, setIncomingRequests] = useState<PlatformRequest[]>(
     () => listRequests()
   );
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -84,30 +84,18 @@ export default function EntreprenorForfragningarPage() {
     incomingRequests.find((request) => request.id === resolvedSelectedRequestId) ||
     incomingRequests[0] ||
     null;
-  const selectedSnapshot = selectedRequest?.snapshot ?? null;
-  const selectedFiles = selectedRequest?.files ?? [];
-  const selectedActions = selectedRequest?.actions ?? selectedRequest?.scope.actions ?? [];
-  const selectedRecipients =
-    selectedRequest?.recipients?.map((recipient) =>
-      recipient.email ? `${recipient.companyName} <${recipient.email}>` : recipient.companyName
-    ) ??
-    selectedRequest?.distribution ??
-    [];
-  const audienceLabel = selectedRequest?.audience === "privat" ? "Privatperson" : "BRF";
-  const riskLabel = selectedSnapshot
-    ? toSwedishRiskLabel(selectedSnapshot.riskProfile.level)
-    : selectedRequest?.riskProfile;
 
   return (
     <DashboardShell
       roleLabel="Entreprenör"
-      heading="Inkomna projektförfrågningar"
-      subheading="Här hanterar du snapshot-baserade förfrågningar från BRF och privatpersoner med samma underlagsstruktur."
+      heading="Se förfrågningar"
+      subheading="Översikt över inkomna förfrågningar. All kommunikation finns i fliken Meddelanden."
       startProjectHref="/dashboard/entreprenor/forfragningar"
       startProjectLabel="Se förfrågningar"
       navItems={[
         { href: "/dashboard/entreprenor", label: "Översikt" },
         { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
+        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
       ]}
       cards={[]}
     >
@@ -120,22 +108,19 @@ export default function EntreprenorForfragningarPage() {
       )}
 
       {selectedRequest && (
-        <section className="grid gap-6 xl:grid-cols-[320px_1fr]">
+        <section className="grid gap-6 xl:grid-cols-[360px_1fr]">
           <aside className="rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
             <h2 className="mb-3 text-lg font-bold text-[#2A2520]">Inkorg</h2>
             <div className="space-y-2">
               {incomingRequests.map((request) => {
                 const active = request.id === resolvedSelectedRequestId;
-                const label = request.audience === "privat" ? "Privat" : "BRF";
+                const audienceLabel = request.audience === "privat" ? "Privatperson" : "BRF";
                 return (
                   <button
                     key={request.id}
                     type="button"
-                    onClick={() => {
-                      setSelectedRequestId(request.id);
-                      setExpandedActionId(null);
-                    }}
-                    className={`w-full rounded-2xl border px-3 py-3 text-left ${
+                    onClick={() => setSelectedRequestId(request.id)}
+                    className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                       active
                         ? "border-[#8C7860] bg-[#F6F0E8]"
                         : "border-[#E8E3DC] bg-white hover:bg-[#FAF8F5]"
@@ -143,252 +128,94 @@ export default function EntreprenorForfragningarPage() {
                   >
                     <p className="text-sm font-semibold text-[#2A2520]">{request.title}</p>
                     <p className="mt-1 text-xs text-[#6B5A47]">{request.location}</p>
-                    <p className="mt-2 text-xs text-[#766B60]">
-                      {label} · {requestStatusLabel(request.status)} · {formatDate(request.createdAt)}
-                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#766B60]">
+                      <span>{audienceLabel}</span>
+                      <span>•</span>
+                      <span>{requestStatusLabel(request.status)}</span>
+                      <span>•</span>
+                      <span>{formatDate(request.createdAt)}</span>
+                    </div>
                   </button>
                 );
               })}
             </div>
           </aside>
 
-          <main className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-center gap-3">
-              <span className="rounded-full bg-[#8C7860] px-3 py-1 text-xs font-semibold uppercase tracking-wider text-white">
-                Förfrågan från {audienceLabel}
-              </span>
-              <span className="rounded-full border border-[#CDB49B] bg-[#CDB49B]/10 px-3 py-1 text-xs font-semibold text-[#6B5A47]">
-                Matchscore: 93%
-              </span>
-              <span className="rounded-full border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-1 text-xs font-semibold text-[#6B5A47]">
-                {requestStatusLabel(selectedRequest.status)}
-              </span>
-              <span className="text-xs font-semibold text-[#766B60]">
-                Inläst från RequestSnapshot · {formatDate(selectedRequest.createdAt)}
-              </span>
-            </div>
-
-            <h2 className="text-2xl font-bold tracking-tight text-[#2A2520]">
-              {selectedRequest.title} ({selectedRequest.location})
-            </h2>
-            <p className="mt-2 max-w-4xl text-sm leading-relaxed text-[#766B60]">
-              Beställaren har skickat {selectedActions.length} åtgärder i ett låst snapshot-underlag.
-            </p>
-
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  label: "Budgetspann",
-                  value: selectedSnapshot
-                    ? formatSnapshotBudget(selectedSnapshot)
-                    : selectedRequest.budgetRange,
-                },
-                {
-                  label: "Önskad start",
-                  value: selectedSnapshot
-                    ? formatSnapshotTimeline(selectedSnapshot)
-                    : selectedRequest.desiredStart,
-                },
-                {
-                  label: "Underlagsnivå",
-                  value: `${selectedRequest.completeness}% komplett`,
-                },
-                { label: "Riskprofil", value: riskLabel || selectedRequest.riskProfile },
-              ].map((item) => (
-                <div key={item.label} className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                    {item.label}
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-[#2A2520]">{item.value}</p>
-                </div>
-              ))}
-            </div>
-
-            {selectedSnapshot && (
-              <div className="mt-4 grid gap-4 xl:grid-cols-[1.2fr_1fr]">
-                <article className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                    Riskorsaker
-                  </p>
-                  <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
-                    {selectedSnapshot.riskProfile.reasons.map((reason) => (
-                      <li key={reason}>• {reason}</li>
-                    ))}
-                  </ul>
-                </article>
-
-                <article className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                    Rekommenderade nästa steg
-                  </p>
-                  <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
-                    {selectedSnapshot.riskProfile.recommendedNextSteps.map((step) => (
-                      <li key={step}>• {step}</li>
-                    ))}
-                  </ul>
-                </article>
-              </div>
-            )}
-
-            <div className="mt-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                Saknas i underlaget
+          <main className="space-y-4">
+            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+              <h2 className="text-2xl font-bold tracking-tight text-[#2A2520]">
+                {selectedRequest.title}
+              </h2>
+              <p className="mt-1 text-sm text-[#6B5A47]">{selectedRequest.location}</p>
+              <p className="mt-2 text-xs text-[#766B60]">
+                {requestStatusLabel(selectedRequest.status)} · Förfrågan-ID: {selectedRequest.id}
               </p>
-              {selectedRequest.missingInfo.length === 0 && (
-                <p className="mt-2 text-sm text-[#2A2520]">Inga kritiska luckor identifierade.</p>
-              )}
-              {selectedRequest.missingInfo.length > 0 && (
-                <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
-                  {selectedRequest.missingInfo.map((item) => (
-                    <li key={item}>• {item}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
 
-            <div className="mt-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                Utskickade till entreprenörer
-              </p>
-              {selectedRecipients.length === 0 && (
-                <p className="mt-2 text-sm text-[#2A2520]">Inga mottagare registrerade.</p>
-              )}
-              {selectedRecipients.length > 0 && (
-                <ul className="mt-2 space-y-1 text-sm text-[#2A2520]">
-                  {selectedRecipients.map((recipient) => (
-                    <li key={recipient}>• {recipient}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {selectedRequest.propertySnapshot && (
-              <div className="mt-6 grid gap-4 xl:grid-cols-[1.3fr_1fr]">
-                <article className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                    Fastighets- och projektunderlag
-                  </p>
-                  <h3 className="mt-2 text-lg font-bold text-[#2A2520]">
-                    {selectedRequest.propertySnapshot.title}
-                  </h3>
-                  <p className="mt-1 text-sm text-[#6B5A47]">{selectedRequest.propertySnapshot.address}</p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {[
-                      {
-                        label: "Byggår",
-                        value: selectedRequest.propertySnapshot.buildingYear,
-                      },
-                      {
-                        label: "Lägenheter",
-                        value: selectedRequest.propertySnapshot.apartmentsCount,
-                      },
-                      {
-                        label: "Byggnader",
-                        value: selectedRequest.propertySnapshot.buildingsCount,
-                      },
-                      {
-                        label: "Ytor",
-                        value: selectedRequest.propertySnapshot.areaSummary,
-                      },
-                    ]
-                      .filter((item) => item.value && item.value.trim().length > 0)
-                      .map((item) => (
-                        <div
-                          key={item.label}
-                          className="rounded-xl border border-[#E8E3DC] bg-white px-3 py-2 text-xs"
-                        >
-                          <p className="font-semibold uppercase tracking-wider text-[#8C7860]">
-                            {item.label}
-                          </p>
-                          <p className="mt-1 text-sm font-semibold text-[#2A2520]">{item.value}</p>
-                        </div>
-                      ))}
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  {
+                    label: "Budget",
+                    value: selectedRequest.snapshot
+                      ? formatSnapshotBudget(selectedRequest.snapshot)
+                      : selectedRequest.budgetRange,
+                  },
+                  {
+                    label: "Startfönster",
+                    value: selectedRequest.snapshot
+                      ? formatSnapshotTimeline(selectedRequest.snapshot)
+                      : selectedRequest.desiredStart,
+                  },
+                  {
+                    label: "Underlagsnivå",
+                    value: `${selectedRequest.completeness}% komplett`,
+                  },
+                  {
+                    label: "Riskprofil",
+                    value: selectedRequest.snapshot
+                      ? toSwedishRiskLabel(selectedRequest.snapshot.riskProfile.level)
+                      : selectedRequest.riskProfile || "—",
+                  },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                      {item.label}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#2A2520]">{item.value}</p>
                   </div>
-                </article>
-
-                <article className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                    Dokumentunderlag
-                  </p>
-                  <p className="mt-2 text-2xl font-bold text-[#2A2520]">
-                    {selectedSnapshot?.files.length ??
-                      selectedRequest.documentSummary?.totalFiles ??
-                      selectedFiles.length}{" "}
-                    filer
-                  </p>
-                  {selectedRequest.documentSummary?.highlights &&
-                    selectedRequest.documentSummary.highlights.length > 0 && (
-                      <ul className="mt-3 space-y-1 text-xs text-[#6B5A47]">
-                        {selectedRequest.documentSummary.highlights.map((highlight) => (
-                          <li key={highlight} className="rounded-lg border border-[#E8E3DC] bg-white px-3 py-2">
-                            {highlight}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                </article>
+                ))}
               </div>
-            )}
+            </article>
 
-            <div className="mt-6 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-4">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
-                Åtgärder i förfrågan
-              </p>
-              <div className="mt-3 space-y-3">
-                {selectedActions.map((action) => {
-                  const isOpen = expandedActionId === action.id;
-                  return (
-                    <article
-                      key={action.id}
-                      className="rounded-xl border border-[#E8E3DC] bg-white p-3"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-[240px] flex-1">
-                          <p className="text-sm font-semibold text-[#2A2520]">{action.title}</p>
-                          <p className="mt-1 text-xs text-[#766B60]">
-                            {action.category} · {action.plannedYear} · {formatSek(action.estimatedPriceSek)} ·{" "}
-                            {action.emissionsKgCo2e.toFixed(1)} kg CO₂e
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedActionId((prev) =>
-                              prev === action.id ? null : action.id
-                            )
-                          }
-                          className="rounded-lg border border-[#D9D1C6] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                        >
-                          {isOpen ? "Dölj detaljer" : "Visa detaljer"}
-                        </button>
-                      </div>
-
-                      {isOpen && (
-                        <div className="mt-3 space-y-2 rounded-lg border border-[#EFE8DD] bg-[#FAF8F5] p-3 text-xs text-[#2A2520]">
-                          {action.details && <p>{action.details}</p>}
-                          {action.extraDetails && action.extraDetails.length > 0 && (
-                            <ul className="space-y-1">
-                              {action.extraDetails.slice(0, 12).map((detail, idx) => (
-                                <li key={`${action.id}-detail-${idx}`}>
-                                  <span className="font-semibold">{detail.label}:</span>{" "}
-                                  {detail.value}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                          {action.rawRow && (
-                            <p className="break-words text-[#766B60]">
-                              <span className="font-semibold text-[#6B5A47]">Rå rad:</span>{" "}
-                              {action.rawRow}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </article>
-                  );
-                })}
+            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-bold text-[#2A2520]">Åtgärder i förfrågan</h3>
+              <div className="mt-3 space-y-2">
+                {(selectedRequest.scope.actions ?? selectedRequest.actions ?? []).slice(0, 10).map((action) => (
+                  <div
+                    key={action.id}
+                    className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2"
+                  >
+                    <p className="text-sm font-semibold text-[#2A2520]">{action.title}</p>
+                    <p className="mt-1 text-xs text-[#766B60]">
+                      {action.category} · {action.plannedYear} · {formatSek(action.estimatedPriceSek)}
+                    </p>
+                  </div>
+                ))}
+                {(selectedRequest.scope.actions ?? selectedRequest.actions ?? []).length === 0 && (
+                  <p className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2 text-sm text-[#6B5A47]">
+                    Inga åtgärder registrerade i detta underlag.
+                  </p>
+                )}
               </div>
-            </div>
+
+              <div className="mt-4">
+                <Link
+                  href={`/dashboard/entreprenor/meddelanden?requestId=${selectedRequest.id}`}
+                  className="inline-flex rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]"
+                >
+                  Öppna meddelanden
+                </Link>
+              </div>
+            </article>
           </main>
         </section>
       )}

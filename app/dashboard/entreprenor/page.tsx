@@ -48,6 +48,7 @@ export default function EntreprenorDashboardPage() {
       navItems={[
         { href: "/dashboard/entreprenor", label: "Översikt" },
         { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
+        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
       ]}
       cards={[
         {
@@ -67,6 +68,12 @@ export default function EntreprenorDashboardPage() {
           body: "Planera beläggning och tacka nej till fel uppdrag med tydliga skäl.",
           ctaLabel: "Hantera kapacitet",
           ctaHref: "/dashboard/entreprenor/forfragningar",
+        },
+        {
+          title: "Meddelanden",
+          body: "Kommunicera med beställare i en ren inkorg/chat-vy med bilagor.",
+          ctaLabel: "Öppna meddelanden",
+          ctaHref: "/dashboard/entreprenor/meddelanden",
         },
       ]}
     />
