@@ -44,6 +44,7 @@ export default function PrivatDashboardPage() {
         { href: "/timeline", label: "Timeline" },
         { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
         { href: "/dashboard/privat/dokumentinkorg", label: "Dokumentinkorg" },
+        { href: "/dashboard/privat/filer", label: "Filer" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[
@@ -72,10 +73,10 @@ export default function PrivatDashboardPage() {
           ctaHref: "/start/sammanfattning",
         },
         {
-          title: "Timeline",
-          body: "Visualisera hela projektet i Gantt-format och finjustera datum, beroenden och faser.",
-          ctaLabel: "Öppna timeline",
-          ctaHref: "/timeline",
+          title: "Tidslinje",
+          body: "Följ projektets läge med milstolpar och händelser från förfrågan till avtal, ÄTA och avslut.",
+          ctaLabel: "Öppna tidslinje",
+          ctaHref: "/dashboard/privat/tidslinje",
         },
         {
           title: "Mina förfrågningar",

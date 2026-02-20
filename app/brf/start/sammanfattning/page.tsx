@@ -335,6 +335,7 @@ export default function BrfStartSammanfattningPage() {
 
     const request: PlatformRequest = {
       id: `req-${Date.now()}`,
+      refId: "",
       createdAt: new Date().toISOString(),
       audience: "brf",
       status: "sent",
@@ -379,6 +380,7 @@ export default function BrfStartSammanfattningPage() {
       actions: selectedProcActions,
       recipients,
       distribution: recipients.map((recipient) => toRecipientLabel(recipient)),
+      sharingApproved: false,
     };
 
     saveRequest(request);

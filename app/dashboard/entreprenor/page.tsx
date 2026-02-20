@@ -50,6 +50,7 @@ export default function EntreprenorDashboardPage() {
         { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
         { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
         { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
+        { href: "/dashboard/entreprenor/filer", label: "Filer" },
       ]}
       cards={[
         {

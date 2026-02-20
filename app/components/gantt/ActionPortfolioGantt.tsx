@@ -667,7 +667,7 @@ const ProfessionalGantt = memo(function ProfessionalGantt({
             </span>
           </div>
 
-          <div className="overflow-y-auto" style={{ height: `calc(100vh - ${HEADER_HEIGHT + TIMELINE_HEADER_HEIGHT + 68}px)` }}>
+          <div className="hide-scrollbar overflow-y-auto" style={{ height: `calc(100vh - ${HEADER_HEIGHT + TIMELINE_HEADER_HEIGHT + 68}px)` }}>
             {spans.map(({ project }) => {
               const isExpanded = expandedId === project.id;
               return (
@@ -773,7 +773,7 @@ const ProfessionalGantt = memo(function ProfessionalGantt({
           <div
             ref={bodyRef}
             onScroll={handleBodyScroll}
-            className="overflow-auto bg-[#FAF8F5]"
+            className="hide-scrollbar overflow-auto bg-[#FAF8F5]"
             style={{ height: `calc(100vh - ${HEADER_HEIGHT + TIMELINE_HEADER_HEIGHT + 68}px)` }}
           >
             <div style={{ width: timelineWidth }} className="relative">

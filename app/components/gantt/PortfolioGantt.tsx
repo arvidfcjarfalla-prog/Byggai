@@ -57,7 +57,7 @@ export function PortfolioGantt({
         <div className="sticky left-0 z-10 border-r border-[#E6DFD6] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[#8C7860]">
           Projektportfölj
         </div>
-        <div className="overflow-x-auto">
+        <div className="hide-scrollbar overflow-x-auto">
           <div className="relative h-12" style={{ width: timelineWidth }}>
             {buckets.map((bucket) => {
               const left = diffDays(paddedStartDate, bucket.startDate) * dayWidth;
@@ -100,7 +100,7 @@ export function PortfolioGantt({
           ))}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="hide-scrollbar overflow-x-auto">
           <div className="relative" style={{ width: timelineWidth, minHeight: rows.length * 56 }}>
             {showTodayLine && (
               <div

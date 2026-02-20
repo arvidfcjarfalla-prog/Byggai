@@ -9,6 +9,9 @@ export function GanttToolbar({
   onZoomChange,
   onShowWeekendsChange,
   onGroupByChange,
+  onZoomIn,
+  onZoomOut,
+  onToday,
   onAddTask,
 }: {
   zoom: ScheduleZoom;
@@ -17,26 +20,62 @@ export function GanttToolbar({
   onZoomChange: (zoom: ScheduleZoom) => void;
   onShowWeekendsChange: (enabled: boolean) => void;
   onGroupByChange: (groupBy: ScheduleGroupBy) => void;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onToday?: () => void;
   onAddTask?: () => void;
 }) {
+  const effectiveZoom: Exclude<ScheduleZoom, "quarter"> =
+    zoom === "quarter" ? "month" : zoom;
+
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-[#E6DFD6] bg-white p-3">
       <div className="inline-flex rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] p-1">
-        {(["month", "quarter", "year"] as const).map((value) => (
+        {(["week", "month", "year"] as const).map((value) => (
           <button
             key={value}
             type="button"
             onClick={() => onZoomChange(value)}
             className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${
-              zoom === value
+              effectiveZoom === value
                 ? "bg-[#8C7860] text-white"
                 : "text-[#6B5A47] hover:bg-white"
             }`}
           >
-            {value === "month" ? "Månad" : value === "quarter" ? "Kvartal" : "År"}
+            {value === "week" ? "Veckor" : value === "month" ? "Månader" : "År"}
           </button>
         ))}
       </div>
+
+      {onToday && (
+        <button
+          type="button"
+          onClick={onToday}
+          className="rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-white"
+        >
+          Idag
+        </button>
+      )}
+
+      {onZoomOut && (
+        <button
+          type="button"
+          onClick={onZoomOut}
+          className="rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-white"
+        >
+          Förminska
+        </button>
+      )}
+
+      {onZoomIn && (
+        <button
+          type="button"
+          onClick={onZoomIn}
+          className="rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-white"
+        >
+          Förstora
+        </button>
+      )}
 
       <label className="inline-flex items-center gap-2 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
         <input
@@ -72,4 +111,3 @@ export function GanttToolbar({
     </div>
   );
 }
-

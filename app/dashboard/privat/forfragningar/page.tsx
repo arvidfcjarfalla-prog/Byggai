@@ -43,7 +43,7 @@ export default function PrivatForfragningarPage() {
     <DashboardShell
       roleLabel="Privatperson"
       heading="Mina offertförfrågningar"
-      subheading="Se vad som skickats, vilka entreprenörer som fått underlaget och komplettera förfrågan utan att börja om."
+      subheading="Följ skickade förfrågningar och välj nästa steg: meddelanden, dokument eller tidslinje."
       startProjectHref="/start/sammanfattning"
       startProjectLabel="Skapa ny förfrågan"
       navItems={[
@@ -56,7 +56,7 @@ export default function PrivatForfragningarPage() {
       ]}
       cards={[]}
     >
-      <RequestsOutboxPanel audience="privat" />
+      <RequestsOutboxPanel audience="privat" mode="overview" />
     </DashboardShell>
   );
 }

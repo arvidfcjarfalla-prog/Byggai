@@ -8,6 +8,14 @@ import { DocumentViewer } from "../../../../components/document-viewer";
 import { getDocumentById, subscribeDocuments, type PlatformDocument } from "../../../../lib/documents-store";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../lib/requests-store";
 
+function documentStatusLabel(status: PlatformDocument["status"]): string {
+  if (status === "sent") return "Skickad";
+  if (status === "accepted") return "Accepterad";
+  if (status === "rejected") return "Avvisad";
+  if (status === "superseded") return "Ersatt";
+  return "Utkast";
+}
+
 export default function BrfDocumentViewerPage() {
   const params = useParams<{ documentId: string }>();
   const router = useRouter();
@@ -60,12 +68,22 @@ export default function BrfDocumentViewerPage() {
       roleLabel="Bostadsrättsförening"
       heading="Dokumentviewer"
       subheading="Läs dokument kopplade till föreningens projekt."
+      contextHeader={
+        document && request
+          ? {
+              projectName: request.title,
+              roleLabel: "BRF",
+              statusLabel: documentStatusLabel(document.status),
+            }
+          : undefined
+      }
       cards={[]}
       navItems={[
         { href: "/dashboard/brf", label: "Översikt" },
         { href: "/dashboard/brf/fastighet", label: "Fastighet" },
         { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/brf/dokumentinkorg", label: "Avtalsinkorg" },
+        { href: "/dashboard/brf/dokument", label: "Dokument" },
+        { href: "/dashboard/brf/filer", label: "Filer" },
       ]}
     >
       {!document ? (
@@ -76,8 +94,8 @@ export default function BrfDocumentViewerPage() {
         <DocumentViewer
           document={document}
           request={request}
-          backHref="/dashboard/brf/dokumentinkorg"
-          backLabel="Till avtalsinkorg"
+          backHref="/dashboard/brf/dokument"
+          backLabel="Till dokument"
         />
       )}
     </DashboardShell>

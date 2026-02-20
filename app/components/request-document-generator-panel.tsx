@@ -5,9 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   createDocumentFromTemplate,
   saveDocument,
+  type DocumentAttachmentRef,
   type DocumentType,
 } from "../lib/documents-store";
+import { generateAndStoreDocumentPdf } from "../lib/project-files/document-integration";
+import { listFiles } from "../lib/project-files/store";
 import type { PlatformRequest } from "../lib/requests-store";
+import { AttachmentPicker } from "./attachments/attachment-picker";
 
 interface RequestDocumentGeneratorPanelProps {
   request: PlatformRequest;
@@ -32,12 +36,7 @@ export function RequestDocumentGeneratorPanel({
 }: RequestDocumentGeneratorPanelProps) {
   const router = useRouter();
   const [kind, setKind] = useState<DocumentType>("quote");
-  const [selectedFileIds, setSelectedFileIds] = useState<string[]>(
-    () =>
-      (request.files ?? [])
-        .map((file) => file.id)
-        .filter((id): id is string => typeof id === "string")
-  );
+  const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
 
   const draftTemplate = useMemo(
@@ -45,18 +44,47 @@ export function RequestDocumentGeneratorPanel({
     [actorLabel, kind, request]
   );
 
-  const handleCreate = () => {
+  const [isCreating, setIsCreating] = useState(false);
+
+  const handleCreate = async () => {
+    setIsCreating(true);
+    const projectFiles = listFiles(request.id, undefined, undefined, "entreprenor");
+    const byId = new Map(projectFiles.map((file) => [file.id, file]));
+    const attachments: DocumentAttachmentRef[] = selectedFileIds
+      .map((fileId) => byId.get(fileId))
+      .filter((file): file is (typeof projectFiles)[number] => Boolean(file))
+      .map((file) => ({
+        fileId: file.id,
+        fileRefId: file.refId,
+        filename: file.filename,
+        folder: file.folder,
+        mimeType: file.mimeType,
+      }));
+
     const next = {
       ...draftTemplate,
       linkedFileIds: selectedFileIds,
+      attachments,
     };
-    saveDocument(next);
-    setNotice(`${typeLabel(kind)} skapad. Öppnar editor...`);
-    onDocumentSent?.();
-    router.push(`/dashboard/entreprenor/dokument/${next.id}`);
+    try {
+      const saved = saveDocument(next).find((entry) => entry.id === next.id) ?? next;
+      await generateAndStoreDocumentPdf({
+        document: saved,
+        request,
+        createdBy: actorLabel,
+        senderRole: "entreprenor",
+        senderWorkspaceId: "entreprenor",
+      });
+      setNotice(`${typeLabel(kind)} skapad och PDF lagd i Filer. Öppnar editor...`);
+      onDocumentSent?.();
+      router.push(`/dashboard/entreprenor/dokument/${saved.id}`);
+    } catch (error) {
+      const fallback = "Kunde inte skapa PDF-filen just nu.";
+      setNotice(error instanceof Error && error.message ? error.message : fallback);
+    } finally {
+      setIsCreating(false);
+    }
   };
-
-  const availableFiles = request.files ?? [];
 
   return (
     <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
@@ -82,43 +110,20 @@ export function RequestDocumentGeneratorPanel({
             </select>
           </label>
 
-          <div>
-            <p className="text-xs font-semibold text-[#6B5A47]">Bilagor (kopplade till dokument)</p>
-            {availableFiles.length === 0 ? (
-              <p className="mt-1 text-xs text-[#766B60]">Inga underlagsfiler finns på denna förfrågan.</p>
-            ) : (
-              <ul className="mt-2 space-y-2">
-                {availableFiles.map((file) => {
-                  const fileId = file.id;
-                  if (!fileId) return null;
-                  const checked = selectedFileIds.includes(fileId);
-                  return (
-                    <li key={fileId}>
-                      <label className="flex items-center gap-2 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1.5 text-xs text-[#2A2520]">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setSelectedFileIds((current) =>
-                              checked ? current.filter((id) => id !== fileId) : [...current, fileId]
-                            );
-                          }}
-                        />
-                        <span className="truncate">{file.name}</span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <AttachmentPicker
+            projectId={request.id}
+            selectedFileIds={selectedFileIds}
+            onChange={setSelectedFileIds}
+            workspaceId="entreprenor"
+          />
 
           <button
             type="button"
             onClick={handleCreate}
+            disabled={isCreating}
             className="w-full rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#6B5A47]"
           >
-            Skapa dokument
+            {isCreating ? "Skapar..." : "Skapa dokument"}
           </button>
         </div>
 

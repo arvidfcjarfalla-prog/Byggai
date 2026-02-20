@@ -61,6 +61,7 @@ export function clampTaskDates(startDate: string, endDate: string): {
 }
 
 export function getDayWidth(zoom: ScheduleZoom): number {
+  if (zoom === "week") return 22;
   if (zoom === "month") return 24;
   if (zoom === "year") return 4;
   return 10;
@@ -127,6 +128,36 @@ export function buildTimeBuckets(
 
   const buckets: TimeBucket[] = [];
   let cursor = new Date(start);
+
+  if (zoom === "week") {
+    const startWeekDay = cursor.getDay() || 7;
+    cursor.setDate(cursor.getDate() - (startWeekDay - 1));
+    while (cursor.getTime() <= end.getTime()) {
+      const bucketStart = new Date(cursor);
+      const bucketEnd = new Date(cursor);
+      bucketEnd.setDate(bucketEnd.getDate() + 6);
+      const jan1 = new Date(bucketStart.getFullYear(), 0, 1);
+      const weekNumber =
+        Math.ceil(
+          ((bucketStart.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000) +
+            jan1.getDay() +
+            1) /
+            7
+        ) || 1;
+      buckets.push({
+        id: `${bucketStart.getFullYear()}-w${weekNumber}`,
+        label: `v${weekNumber}`,
+        startDate: toDateOnly(bucketStart),
+        endDate: toDateOnly(bucketEnd),
+        days: taskDurationDays({
+          startDate: toDateOnly(bucketStart),
+          endDate: toDateOnly(bucketEnd),
+        }),
+      });
+      cursor = new Date(bucketEnd.getFullYear(), bucketEnd.getMonth(), bucketEnd.getDate() + 1);
+    }
+    return buckets;
+  }
 
   if (zoom === "month") {
     cursor.setDate(1);

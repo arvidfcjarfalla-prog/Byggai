@@ -28,6 +28,10 @@ function statusLabel(status: PlatformDocument["status"]): string {
   return "Utkast";
 }
 
+async function copyText(value: string) {
+  await navigator.clipboard.writeText(value);
+}
+
 export default function EntreprenorDokumentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -79,8 +83,8 @@ export default function EntreprenorDokumentPage() {
   return (
     <DashboardShell
       roleLabel="Entreprenör"
-      heading="Dokumentgenerator"
-      subheading="Skapa och hantera Offert, Avtal och ÄTA som projektbundna dokumentobjekt."
+      heading="Dokument"
+      subheading="Skapa och hantera offert, avtal och ÄTA som projektbundna dokumentobjekt."
       startProjectHref="/dashboard/entreprenor/forfragningar"
       startProjectLabel="Se förfrågningar"
       navItems={[
@@ -88,6 +92,7 @@ export default function EntreprenorDokumentPage() {
         { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
         { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
         { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
+        { href: "/dashboard/entreprenor/filer", label: "Filer" },
       ]}
       cards={[]}
     >
@@ -123,13 +128,23 @@ export default function EntreprenorDokumentPage() {
                           <p className="text-xs text-[#6B5A47]">
                             {documentTypeLabel(document.type)} · v{document.version} · {statusLabel(document.status)}
                           </p>
+                          <p className="font-mono text-[11px] text-[#6B5A47]">{document.refId}</p>
                         </div>
-                        <Link
-                          href={`/dashboard/entreprenor/dokument/${document.id}`}
-                          className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                        >
-                          Öppna editor
-                        </Link>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void copyText(document.refId)}
+                            className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            Kopiera RefID
+                          </button>
+                          <Link
+                            href={`/dashboard/entreprenor/dokument/${document.id}`}
+                            className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            Öppna editor
+                          </Link>
+                        </div>
                       </div>
                     </li>
                   ))}

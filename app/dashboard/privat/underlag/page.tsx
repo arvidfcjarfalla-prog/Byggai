@@ -952,6 +952,7 @@ export default function PrivatUnderlagPage() {
       {tab === "timeline" && (
         <section className="space-y-4">
           <SchedulePreviewCard
+            key={timelineContext.projectId}
             context={timelineContext}
             heading="Projektets tidsplan"
             description="Auto-genererad från snapshot och underlag. Gå till Timeline för full redigering."

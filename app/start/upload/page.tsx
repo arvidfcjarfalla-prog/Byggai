@@ -960,6 +960,7 @@ export function BrfUploadWorkspace({
 
     const nextRequest: PlatformRequest = {
       id: `req-${Date.now()}`,
+      refId: "",
       createdAt: new Date().toISOString(),
       audience: "brf",
       status: "sent",
@@ -986,6 +987,7 @@ export function BrfUploadWorkspace({
       files: mapFilesForRequest(requestFiles),
       recipients,
       distribution: recipients.map((recipient) => toRecipientLabel(recipient)),
+      sharingApproved: false,
     };
 
     persistDraft(actions, selectedActionIds);

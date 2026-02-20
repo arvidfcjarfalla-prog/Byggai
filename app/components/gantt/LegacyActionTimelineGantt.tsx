@@ -63,6 +63,23 @@ type RenderRow =
       indexInProject: number;
     };
 
+type DragMode = "move" | "resize-start" | "resize-end";
+
+interface DragState {
+  rowId: string;
+  projectId: string;
+  actionTaskId: string;
+  mode: DragMode;
+  pointerStartX: number;
+  initialStartDate: string;
+  initialEndDate: string;
+}
+
+interface PreviewDateRange {
+  startDate: string;
+  endDate: string;
+}
+
 function parseDate(isoDate: string): Date {
   const parsed = new Date(`${isoDate}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return new Date();
@@ -169,17 +186,17 @@ function statusText(status: ActionPortfolioRow["status"]): string {
 }
 
 function statusClass(status: ActionPortfolioRow["status"]): string {
-  if (status === "done") return "border-[#A8D8C6] bg-[#ECF8F2] text-[#2E6C58]";
-  if (status === "in_progress") return "border-[#BFD0DD] bg-[#EEF3F7] text-[#425D73]";
-  if (status === "blocked") return "border-[#E5BEC1] bg-[#FDF1F2] text-[#A4555B]";
+  if (status === "done") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status === "in_progress") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status === "blocked") return "border-rose-200 bg-rose-50 text-rose-700";
   return "border-[#D9D1C6] bg-[#FAF8F5] text-[#6B5A47]";
 }
 
 function barClass(status: ActionPortfolioRow["status"]): string {
-  if (status === "done") return "bg-[#4F8A73] hover:bg-[#3F735F]";
-  if (status === "in_progress") return "bg-[#5F7F95] hover:bg-[#4D6B80]";
-  if (status === "blocked") return "bg-[#B8666B] hover:bg-[#9F585D]";
-  return "bg-[#7B6853] hover:bg-[#665543]";
+  if (status === "done") return "bg-emerald-500 hover:bg-emerald-600";
+  if (status === "in_progress") return "bg-sky-500 hover:bg-sky-600";
+  if (status === "blocked") return "bg-rose-500 hover:bg-rose-600";
+  return "bg-[#8C7860] hover:bg-[#6B5A47]";
 }
 
 function zoomDayWidth(zoom: ScheduleZoom, compact: boolean): number {
@@ -198,6 +215,13 @@ function formatRange(startDate: string, endDate: string): string {
   if (startYear === endYear && startMonth === endMonth) return `${startMonth} ${startYear}`;
   if (startYear === endYear) return `${startMonth}-${endMonth} ${startYear}`;
   return `${startMonth} ${startYear} - ${endMonth} ${endYear}`;
+}
+
+function clampRange(startDate: string, endDate: string): PreviewDateRange {
+  if (parseDate(endDate).getTime() < parseDate(startDate).getTime()) {
+    return { startDate, endDate: startDate };
+  }
+  return { startDate, endDate };
 }
 
 function groupRowsByProject(rows: ActionPortfolioRow[]): ProjectGroup[] {
@@ -235,6 +259,9 @@ export function LegacyActionTimelineGantt({
   endDate,
   onActionOpen,
   onProjectOpen,
+  onActionDatesChange,
+  onAddAction,
+  projectOptions,
 }: {
   rows: ActionPortfolioRow[];
   zoom: ScheduleZoom;
@@ -242,9 +269,23 @@ export function LegacyActionTimelineGantt({
   endDate: string;
   onActionOpen: (projectId: string, actionTaskId: string) => void;
   onProjectOpen?: (projectId: string) => void;
+  onActionDatesChange?: (
+    projectId: string,
+    actionTaskId: string,
+    nextStartDate: string,
+    nextEndDate: string
+  ) => void;
+  onAddAction?: (projectId: string, title: string) => void;
+  projectOptions?: Array<{ projectId: string; projectTitle: string }>;
 }) {
   const [compact, setCompact] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [previewDates, setPreviewDates] = useState<Record<string, PreviewDateRange>>({});
+  const [newActionProjectId, setNewActionProjectId] = useState("");
+  const [newActionTitle, setNewActionTitle] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const editable = Boolean(onActionDatesChange);
 
   const leftColWidth = compact ? 340 : 440;
   const actionRowHeight = compact ? 48 : 66;
@@ -284,6 +325,21 @@ export function LegacyActionTimelineGantt({
   }, [monthSegments]);
 
   const grouped = useMemo(() => groupRowsByProject(rows), [rows]);
+  const actionProjectOptions = useMemo(() => {
+    if (projectOptions && projectOptions.length > 0) {
+      return projectOptions;
+    }
+    return grouped.map((group) => ({
+      projectId: group.projectId,
+      projectTitle: group.projectTitle,
+    }));
+  }, [grouped, projectOptions]);
+  const effectiveActionProjectId = useMemo(() => {
+    if (actionProjectOptions.length === 0) return "";
+    return actionProjectOptions.some((option) => option.projectId === newActionProjectId)
+      ? newActionProjectId
+      : actionProjectOptions[0].projectId;
+  }, [actionProjectOptions, newActionProjectId]);
   const effectiveCollapsed = useMemo(() => {
     const next: Record<string, boolean> = {};
     grouped.forEach((group, index) => {
@@ -317,6 +373,57 @@ export function LegacyActionTimelineGantt({
     });
     return flattened;
   }, [effectiveCollapsed, grouped]);
+
+  useEffect(() => {
+    if (!editable || !onActionDatesChange || !dragState) return;
+
+    const onPointerMove = (event: PointerEvent) => {
+      const deltaDays = Math.round((event.clientX - dragState.pointerStartX) / dayWidth);
+      let nextStartDate = dragState.initialStartDate;
+      let nextEndDate = dragState.initialEndDate;
+
+      if (dragState.mode === "move") {
+        nextStartDate = addDays(dragState.initialStartDate, deltaDays);
+        nextEndDate = addDays(dragState.initialEndDate, deltaDays);
+      } else if (dragState.mode === "resize-start") {
+        nextStartDate = addDays(dragState.initialStartDate, deltaDays);
+      } else {
+        nextEndDate = addDays(dragState.initialEndDate, deltaDays);
+      }
+
+      setPreviewDates((current) => ({
+        ...current,
+        [dragState.rowId]: clampRange(nextStartDate, nextEndDate),
+      }));
+    };
+
+    const onPointerEnd = () => {
+      const preview = previewDates[dragState.rowId] || {
+        startDate: dragState.initialStartDate,
+        endDate: dragState.initialEndDate,
+      };
+      onActionDatesChange(
+        dragState.projectId,
+        dragState.actionTaskId,
+        preview.startDate,
+        preview.endDate
+      );
+
+      setDragState(null);
+      setPreviewDates((current) => {
+        const next = { ...current };
+        delete next[dragState.rowId];
+        return next;
+      });
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerEnd, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerEnd);
+    };
+  }, [dayWidth, dragState, editable, onActionDatesChange, previewDates]);
 
   const headerScrollRef = useRef<HTMLDivElement | null>(null);
   const bodyScrollRef = useRef<HTMLDivElement | null>(null);
@@ -370,6 +477,45 @@ export function LegacyActionTimelineGantt({
     body.scrollTo({ left, behavior: "smooth" });
   };
 
+  const startDrag = (
+    event: {
+      clientX: number;
+      preventDefault: () => void;
+      stopPropagation: () => void;
+    },
+    row: ActionPortfolioRow,
+    mode: DragMode
+  ) => {
+    if (!editable || !onActionDatesChange) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragState({
+      rowId: row.id,
+      projectId: row.projectId,
+      actionTaskId: row.actionTaskId,
+      mode,
+      pointerStartX: event.clientX,
+      initialStartDate: row.startDate,
+      initialEndDate: row.endDate,
+    });
+  };
+
+  const handleAddAction = () => {
+    if (!onAddAction) return;
+    if (!effectiveActionProjectId) {
+      setFormError("Välj projekt.");
+      return;
+    }
+    const title = newActionTitle.trim();
+    if (title.length < 2) {
+      setFormError("Skriv ett namn på aktiviteten.");
+      return;
+    }
+    onAddAction(effectiveActionProjectId, title);
+    setNewActionTitle("");
+    setFormError(null);
+  };
+
   const today = new Date();
   const todayDate = `${today.getFullYear()}-${`${today.getMonth() + 1}`.padStart(2, "0")}-${`${today
     .getDate()
@@ -393,11 +539,11 @@ export function LegacyActionTimelineGantt({
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6DFD6] bg-white">
       <div className="grid border-b border-[#E6DFD6]" style={{ gridTemplateColumns: `${leftColWidth}px 1fr` }}>
-        <div className="sticky left-0 z-10 border-r border-[#E6DFD6] bg-[#6B5A47] px-4 py-3 text-sm font-semibold uppercase tracking-wide text-[#F8F4EE]">
+        <div className="sticky left-0 z-10 border-r border-[#E6DFD6] bg-[#FAF8F5] px-4 py-3 text-sm font-semibold uppercase tracking-wide text-[#8C7860]">
           Åtgärder i underhållsplanen
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6DFD6] bg-[#F8F4EE] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E6DFD6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setCompact((value) => !value)}
@@ -427,6 +573,35 @@ export function LegacyActionTimelineGantt({
             >
               Fäll ihop alla
             </button>
+            {onAddAction && (
+              <>
+                <select
+                  value={effectiveActionProjectId}
+                  onChange={(event) => setNewActionProjectId(event.target.value)}
+                  className="rounded-lg border border-[#D9D1C6] bg-white px-2 py-1 text-[11px] font-semibold"
+                >
+                  {actionProjectOptions.map((option) => (
+                    <option key={option.projectId} value={option.projectId}>
+                      {option.projectTitle}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  value={newActionTitle}
+                  onChange={(event) => setNewActionTitle(event.target.value)}
+                  placeholder="Ny aktivitet"
+                  className="w-40 rounded-lg border border-[#D9D1C6] bg-white px-2 py-1 text-[11px] font-semibold"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddAction}
+                  className="rounded-lg border border-[#8C7860] bg-[#8C7860] px-2.5 py-1 text-[11px] font-semibold text-white"
+                >
+                  + Lägg till
+                </button>
+              </>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             {yearAnchors.map((anchor) => (
@@ -449,11 +624,16 @@ export function LegacyActionTimelineGantt({
             <span>{moreRight ? "Fler år finns åt höger →" : "Visar hela tidsfönstret"}</span>
           </div>
         </div>
+        {formError && (
+          <div className="border-b border-[#E6DFD6] bg-[#FFF5F1] px-3 py-1.5 text-xs font-semibold text-[#A4555B]">
+            {formError}
+          </div>
+        )}
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: `${leftColWidth}px 1fr` }}>
         <div className="sticky left-0 z-10 border-r border-[#E6DFD6] bg-white">
-          <div style={{ height: headerTotalHeight }} className="border-b border-[#E6DFD6] bg-[#F8F4EE]" />
+          <div style={{ height: headerTotalHeight }} className="border-b border-[#E6DFD6] bg-[#FAF8F5]" />
           {positionedRows.map(({ row, top, height }) => {
             if (row.type === "project") {
               const isCollapsed = Boolean(
@@ -462,7 +642,7 @@ export function LegacyActionTimelineGantt({
               return (
                 <div
                   key={row.key}
-                  className="absolute left-0 right-0 overflow-hidden border-b border-[#EDE7DE] bg-[#F4EFE7] px-3"
+                  className="absolute left-0 right-0 overflow-hidden border-b border-[#F0EBE3] bg-[#FAF8F5] px-3"
                   style={{ top: headerTotalHeight + top, height }}
                 >
                   <div className="flex h-full items-center justify-between gap-2">
@@ -498,7 +678,7 @@ export function LegacyActionTimelineGantt({
                 type="button"
                 onClick={() => onActionOpen(row.row.projectId, row.row.actionTaskId)}
                 className={`absolute left-0 right-0 overflow-hidden border-b border-[#F0EBE3] px-4 text-left hover:bg-[#FAF8F5] ${
-                  row.indexInProject % 2 === 0 ? "bg-white" : "bg-[#FCFAF7]"
+                  row.indexInProject % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"
                 }`}
                 style={{ top: headerTotalHeight + top, height }}
               >
@@ -528,7 +708,7 @@ export function LegacyActionTimelineGantt({
         </div>
 
         <div>
-          <div ref={headerScrollRef} className="overflow-x-auto border-b border-[#E6DFD6]">
+          <div ref={headerScrollRef} className="hide-scrollbar overflow-x-auto border-b border-[#E6DFD6]">
             <div className="relative border-b border-[#E6DFD6]" style={{ width: timelineWidth, height: 34 }}>
               {topBands.map((band) => {
                 const left = diffDays(paddedStartDate, band.startDate) * dayWidth;
@@ -536,7 +716,7 @@ export function LegacyActionTimelineGantt({
                 return (
                   <div
                     key={`top-${band.id}`}
-                    className="absolute inset-y-0 border-r border-white/20 bg-[#8C7860] px-2 py-2 text-xs font-semibold text-[#F8F4EE]"
+                    className="absolute inset-y-0 border-r border-[#E8E3DC] bg-[#F3EEE7] px-2 py-2 text-xs font-semibold text-[#6B5A47]"
                     style={{ left, width }}
                     title={band.label}
                   >
@@ -552,8 +732,8 @@ export function LegacyActionTimelineGantt({
                 return (
                   <div
                     key={`bottom-${band.id}-${index}`}
-                    className={`absolute inset-y-0 border-r border-[#D9D1C6] px-2 py-1 text-xs font-semibold text-[#4A4036] ${
-                      index % 2 === 0 ? "bg-[#F8F4EE]" : "bg-[#EEE6DA]"
+                    className={`absolute inset-y-0 border-r border-[#E8E3DC] px-2 py-1 text-xs font-medium text-[#766B60] ${
+                      index % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"
                     }`}
                     style={{ left, width }}
                     title={band.label}
@@ -565,7 +745,7 @@ export function LegacyActionTimelineGantt({
             </div>
           </div>
 
-          <div ref={bodyScrollRef} className="overflow-x-auto">
+          <div ref={bodyScrollRef} className="hide-scrollbar overflow-x-auto">
             <div className="relative" style={{ width: timelineWidth, minHeight: headerTotalHeight + totalHeight }}>
               {bottomBands.map((band, index) => {
                 const left = diffDays(paddedStartDate, band.startDate) * dayWidth;
@@ -573,8 +753,8 @@ export function LegacyActionTimelineGantt({
                 return (
                   <div
                     key={`bg-${band.id}-${index}`}
-                    className={`absolute inset-y-0 border-r border-[#E6DFD6] ${
-                      index % 2 === 0 ? "bg-white/90" : "bg-[#FAF7F1]"
+                    className={`absolute inset-y-0 border-r border-[#E8E3DC] ${
+                      index % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"
                     }`}
                     style={{ left, width }}
                   />
@@ -583,7 +763,7 @@ export function LegacyActionTimelineGantt({
 
               {showTodayLine && (
                 <div
-                  className="absolute inset-y-0 z-30 w-0.5 bg-[#D6A93A]"
+                  className="absolute inset-y-0 z-30 w-0.5 bg-[#E7B54A]"
                   style={{ left: todayOffset * dayWidth }}
                 />
               )}
@@ -593,14 +773,17 @@ export function LegacyActionTimelineGantt({
                   return (
                     <div
                       key={`grid-${row.key}`}
-                      className="absolute left-0 right-0 border-b border-[#EDE7DE] bg-[#F4EFE7]/70"
+                      className="absolute left-0 right-0 border-b border-[#F0EBE3] bg-[#FAF8F5]"
                       style={{ top: headerTotalHeight + top, height }}
                     />
                   );
                 }
 
-                const left = Math.max(0, diffDays(paddedStartDate, row.row.startDate) * dayWidth);
-                const width = Math.max(16, (diffDays(row.row.startDate, row.row.endDate) + 1) * dayWidth);
+                const preview = previewDates[row.row.id];
+                const effectiveStartDate = preview?.startDate || row.row.startDate;
+                const effectiveEndDate = preview?.endDate || row.row.endDate;
+                const left = Math.max(0, diffDays(paddedStartDate, effectiveStartDate) * dayWidth);
+                const width = Math.max(16, (diffDays(effectiveStartDate, effectiveEndDate) + 1) * dayWidth);
                 const showTitle = width >= 96;
                 const showDateOnBar = width >= 180;
 
@@ -617,7 +800,7 @@ export function LegacyActionTimelineGantt({
                         row.row.status
                       )} ${compact ? "h-6" : "h-9"}`}
                       style={{ left, width }}
-                      title={`${row.row.title} (${formatRange(row.row.startDate, row.row.endDate)})`}
+                      title={`${row.row.title} (${formatRange(effectiveStartDate, effectiveEndDate)})`}
                     >
                       {showTitle ? (
                         <span className="block truncate">{row.row.title}</span>
@@ -626,10 +809,43 @@ export function LegacyActionTimelineGantt({
                       )}
                       {!compact && showDateOnBar && (
                         <span className="ml-2 shrink-0 text-[10px] font-medium text-white/90">
-                          {formatRange(row.row.startDate, row.row.endDate)}
+                          {formatRange(effectiveStartDate, effectiveEndDate)}
                         </span>
                       )}
                     </button>
+
+                    {editable && onActionDatesChange && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onActionOpen(row.row.projectId, row.row.actionTaskId)}
+                          onPointerDown={(event) => startDrag(event, row.row, "move")}
+                          aria-label="Flytta aktivitet"
+                          className={`absolute top-1/2 -translate-y-1/2 cursor-grab rounded-md border border-white/30 bg-white/10 ${
+                            compact ? "h-6" : "h-9"
+                          }`}
+                          style={{ left, width }}
+                        />
+                        <button
+                          type="button"
+                          onPointerDown={(event) => startDrag(event, row.row, "resize-start")}
+                          aria-label="Ändra start"
+                          className={`absolute top-1/2 w-2 -translate-y-1/2 cursor-ew-resize rounded-l-md bg-black/25 ${
+                            compact ? "h-6" : "h-9"
+                          }`}
+                          style={{ left }}
+                        />
+                        <button
+                          type="button"
+                          onPointerDown={(event) => startDrag(event, row.row, "resize-end")}
+                          aria-label="Ändra slut"
+                          className={`absolute top-1/2 w-2 -translate-y-1/2 cursor-ew-resize rounded-r-md bg-black/25 ${
+                            compact ? "h-6" : "h-9"
+                          }`}
+                          style={{ left: left + width - 8 }}
+                        />
+                      </>
+                    )}
                   </div>
                 );
               })}

@@ -13,6 +13,12 @@ import {
   type PlatformDocument,
 } from "../../../../lib/documents-store";
 import { renderDocumentToHtml } from "../../../../lib/document-renderer";
+import {
+  generateAndStoreDocumentPdf,
+  shareDocumentPdfToRecipient,
+} from "../../../../lib/project-files/document-integration";
+import { listFiles, subscribeProjectFiles } from "../../../../lib/project-files/store";
+import type { ProjectFile } from "../../../../lib/project-files/types";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../lib/requests-store";
 
 function fieldValueToString(value: DocumentField["value"]): string {
@@ -36,7 +42,9 @@ export default function EntreprenorDocumentEditorPage() {
 
   const [document, setDocument] = useState<PlatformDocument | null>(null);
   const [request, setRequest] = useState<PlatformRequest | null>(null);
+  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -69,6 +77,44 @@ export default function EntreprenorDocumentEditorPage() {
       unsubRequests();
     };
   }, [documentId]);
+
+  useEffect(() => {
+    const sync = () => {
+      if (!document?.requestId) {
+        setProjectFiles([]);
+        return;
+      }
+      setProjectFiles(
+        listFiles(document.requestId, undefined, undefined, "entreprenor")
+      );
+    };
+
+    sync();
+    return subscribeProjectFiles(sync);
+  }, [document?.requestId]);
+
+  useEffect(() => {
+    if (!document || projectFiles.length === 0) return;
+    if (document.attachments.length >= document.linkedFileIds.length) return;
+
+    const byId = new Map(projectFiles.map((file) => [file.id, file]));
+    const nextAttachments = document.linkedFileIds
+      .map((fileId) => byId.get(fileId))
+      .filter((file): file is ProjectFile => Boolean(file))
+      .map((file) => ({
+        fileId: file.id,
+        fileRefId: file.refId,
+        filename: file.filename,
+        folder: file.folder,
+        mimeType: file.mimeType,
+      }));
+
+    if (nextAttachments.length === 0) return;
+    setDocument({
+      ...document,
+      attachments: nextAttachments,
+    });
+  }, [document, projectFiles]);
 
   const previewHtml = useMemo(() => {
     if (!document) return "";
@@ -123,15 +169,30 @@ export default function EntreprenorDocumentEditorPage() {
     });
   };
 
-  const setLinkedFile = (fileId: string, enabled: boolean) => {
+  const setLinkedFile = (file: ProjectFile, enabled: boolean) => {
     setDocument((current) => {
       if (!current) return current;
       const linkedFileIds = enabled
-        ? Array.from(new Set([...current.linkedFileIds, fileId]))
-        : current.linkedFileIds.filter((id) => id !== fileId);
+        ? Array.from(new Set([...current.linkedFileIds, file.id]))
+        : current.linkedFileIds.filter((id) => id !== file.id);
+
+      const attachments = enabled
+        ? [
+            ...current.attachments.filter((entry) => entry.fileId !== file.id),
+            {
+              fileId: file.id,
+              fileRefId: file.refId,
+              filename: file.filename,
+              folder: file.folder,
+              mimeType: file.mimeType,
+            },
+          ]
+        : current.attachments.filter((entry) => entry.fileId !== file.id);
+
       return {
         ...current,
         linkedFileIds,
+        attachments,
       };
     });
   };
@@ -170,8 +231,9 @@ export default function EntreprenorDocumentEditorPage() {
     });
   };
 
-  const persist = (nextStatus?: PlatformDocument["status"]) => {
+  const persist = async (nextStatus?: PlatformDocument["status"]) => {
     if (!document) return;
+    setIsBusy(true);
     const withRender: PlatformDocument = {
       ...document,
       status: nextStatus ?? document.status,
@@ -184,16 +246,83 @@ export default function EntreprenorDocumentEditorPage() {
       ),
     };
 
-    saveDocument(withRender);
-    setDocument(withRender);
-    setNotice(nextStatus === "sent" ? "Dokument skickat till inkorg." : "Dokument sparat.");
+    try {
+      const saved = saveDocument(withRender).find((entry) => entry.id === withRender.id) ?? withRender;
+      await generateAndStoreDocumentPdf({
+        document: saved,
+        request,
+        createdBy: saved.createdByLabel,
+        senderRole: saved.createdByRole,
+        senderWorkspaceId: "entreprenor",
+      });
+      setDocument(saved);
+      setNotice(nextStatus === "sent" ? "Dokument skickat till inkorg." : "Dokument sparat och PDF uppdaterad i Filer.");
+    } catch (error) {
+      const fallback = "Kunde inte spara dokument-PDF.";
+      setNotice(error instanceof Error && error.message ? error.message : fallback);
+    } finally {
+      setIsBusy(false);
+    }
   };
 
-  const handleCreateNextVersion = () => {
+  const handleCreateNextVersion = async () => {
     const next = createNextVersion(document.id);
     if (!next) return;
-    setNotice("Ny version skapad.");
-    router.push(`/dashboard/entreprenor/dokument/${next.id}`);
+    setIsBusy(true);
+    try {
+      await generateAndStoreDocumentPdf({
+        document: next,
+        request,
+        createdBy: next.createdByLabel,
+        senderRole: next.createdByRole,
+        senderWorkspaceId: "entreprenor",
+      });
+      setNotice("Ny version skapad och PDF tillagd i Filer.");
+      router.push(`/dashboard/entreprenor/dokument/${next.id}`);
+    } catch (error) {
+      const fallback = "Ny version skapades, men PDF kunde inte genereras.";
+      setNotice(error instanceof Error && error.message ? error.message : fallback);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSendToCustomer = async () => {
+    setIsBusy(true);
+    try {
+      const withRender: PlatformDocument = {
+        ...document,
+        status: "sent",
+        renderedHtml: renderDocumentToHtml(
+          {
+            ...document,
+            status: "sent",
+          },
+          request
+        ),
+      };
+      const saved = saveDocument(withRender).find((entry) => entry.id === withRender.id) ?? withRender;
+      await generateAndStoreDocumentPdf({
+        document: saved,
+        request,
+        createdBy: saved.createdByLabel,
+        senderRole: saved.createdByRole,
+        senderWorkspaceId: "entreprenor",
+      });
+      await shareDocumentPdfToRecipient({
+        document: saved,
+        senderLabel: saved.createdByLabel,
+        senderRole: saved.createdByRole,
+        senderWorkspaceId: "entreprenor",
+      });
+      setDocument(saved);
+      setNotice("PDF skickad till kundens Filer.");
+    } catch (error) {
+      const fallback = "Kunde inte skicka PDF till kund.";
+      setNotice(error instanceof Error && error.message ? error.message : fallback);
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   return (
@@ -208,6 +337,7 @@ export default function EntreprenorDocumentEditorPage() {
         { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
         { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
         { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
+        { href: "/dashboard/entreprenor/filer", label: "Filer" },
       ]}
       cards={[]}
     >
@@ -221,15 +351,30 @@ export default function EntreprenorDocumentEditorPage() {
               className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
             />
           </div>
+          <div className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B5A47]">RefID</p>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <p className="font-mono text-xs text-[#2A2520]">{document.refId}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(document.refId);
+                  setNotice("RefID kopierad.");
+                }}
+                className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+              >
+                Kopiera
+              </button>
+            </div>
+          </div>
 
           <div className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B5A47]">Bilagor</p>
-            {(request?.files?.length ?? 0) === 0 ? (
+            {projectFiles.length === 0 ? (
               <p className="mt-2 text-xs text-[#766B60]">Inga bilagor kopplade till förfrågan.</p>
             ) : (
               <ul className="mt-2 space-y-1">
-                {(request?.files ?? []).map((file) => {
-                  if (!file.id) return null;
+                {projectFiles.map((file) => {
                   const checked = document.linkedFileIds.includes(file.id);
                   return (
                     <li key={file.id}>
@@ -237,9 +382,10 @@ export default function EntreprenorDocumentEditorPage() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(event) => setLinkedFile(file.id as string, event.target.checked)}
+                          onChange={(event) => setLinkedFile(file, event.target.checked)}
                         />
-                        <span className="truncate">{file.name}</span>
+                        <span className="min-w-0 flex-1 truncate">{file.filename}</span>
+                        <span className="font-mono text-[10px] text-[#6B5A47]">{file.refId}</span>
                       </label>
                     </li>
                   );
@@ -321,10 +467,47 @@ export default function EntreprenorDocumentEditorPage() {
                         placeholder="Rubrik"
                       />
                       <input
+                        value={item.description ?? ""}
+                        onChange={(event) =>
+                          setItemValue(section.id, item.id, "description", event.target.value)
+                        }
+                        className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                        placeholder="Källa/ref"
+                      />
+                      <div className="mb-1 grid grid-cols-3 gap-1">
+                        <input
+                          value={item.quantity ?? ""}
+                          onChange={(event) =>
+                            setItemValue(section.id, item.id, "quantity", event.target.value)
+                          }
+                          className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                          placeholder="Antal"
+                          inputMode="decimal"
+                        />
+                        <input
+                          value={item.unitPrice ?? ""}
+                          onChange={(event) =>
+                            setItemValue(section.id, item.id, "unitPrice", event.target.value)
+                          }
+                          className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                          placeholder="A-pris"
+                          inputMode="decimal"
+                        />
+                        <input
+                          value={item.total ?? ""}
+                          onChange={(event) =>
+                            setItemValue(section.id, item.id, "total", event.target.value)
+                          }
+                          className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                          placeholder="Summa"
+                          inputMode="decimal"
+                        />
+                      </div>
+                      <input
                         value={item.value ?? ""}
                         onChange={(event) => setItemValue(section.id, item.id, "value", event.target.value)}
                         className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                        placeholder="Varde/kommentar"
+                        placeholder="Notering/kommentar"
                       />
                     </div>
                   ))}
@@ -336,24 +519,27 @@ export default function EntreprenorDocumentEditorPage() {
           <div className="flex flex-wrap gap-2 border-t border-[#E8E3DC] pt-3">
             <button
               type="button"
-              onClick={() => persist()}
+              onClick={() => void persist()}
+              disabled={isBusy}
               className="rounded-xl bg-[#8C7860] px-3 py-2 text-xs font-semibold text-white hover:bg-[#6B5A47]"
             >
-              Spara
+              {isBusy ? "Arbetar..." : "Spara"}
             </button>
             <button
               type="button"
-              onClick={handleCreateNextVersion}
+              onClick={() => void handleCreateNextVersion()}
+              disabled={isBusy}
               className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
             >
               Skapa ny version
             </button>
             <button
               type="button"
-              onClick={() => persist("sent")}
+              onClick={() => void handleSendToCustomer()}
+              disabled={isBusy}
               className="rounded-xl border border-[#8C7860] bg-[#F6F0E8] px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#EFE4D6]"
             >
-              Skicka till inkorg
+              Skicka PDF
             </button>
           </div>
 

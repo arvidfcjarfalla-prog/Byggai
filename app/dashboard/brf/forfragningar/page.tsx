@@ -43,7 +43,7 @@ export default function BrfForfragningarPage() {
     <DashboardShell
       roleLabel="Bostadsrättsförening"
       heading="BRF-förfrågningar"
-      subheading="Följ utskickade upphandlingar, se mottagare per projekt och komplettera underlag till entreprenörer."
+      subheading="Följ utskickade upphandlingar och välj nästa steg i varje projekt: meddelanden, dokument eller tidslinje."
       startProjectHref="/brf/start/sammanfattning"
       startProjectLabel="Skapa ny förfrågan"
       navItems={[
@@ -57,7 +57,7 @@ export default function BrfForfragningarPage() {
       ]}
       cards={[]}
     >
-      <RequestsOutboxPanel audience="brf" />
+      <RequestsOutboxPanel audience="brf" mode="overview" />
     </DashboardShell>
   );
 }

@@ -5,6 +5,8 @@ import {
   type ProjectSnapshot,
   type ProjectSnapshotFile,
 } from "./project-snapshot";
+import { ensureRegisteredRefId } from "./refid/registry";
+import { validateRefId } from "./refid/validate";
 
 export type RequestAudience = "brf" | "privat";
 export type RequestStatus = "draft" | "sent" | "received";
@@ -86,6 +88,7 @@ export interface RequestRecipient {
 
 export interface PlatformRequest {
   id: string;
+  refId: string;
   createdAt: string;
   audience: RequestAudience;
   status: RequestStatus;
@@ -107,6 +110,8 @@ export interface PlatformRequest {
   replyDeadline?: string;
   distribution?: string[];
   recipients?: RequestRecipient[];
+  sharingApproved: boolean;
+  sharingApprovedAt?: string;
 
   // Backwards compatibility for already-built views.
   actions?: ProcurementAction[];
@@ -124,6 +129,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function normalizeStatus(raw: unknown): RequestStatus {
   if (raw === "draft" || raw === "received") return raw;
   return "sent";
+}
+
+function normalizeSharingApproved(raw: unknown): boolean {
+  return raw === true;
+}
+
+function normalizeSharingApprovedAt(raw: unknown, sharingApproved: boolean): string | undefined {
+  if (!sharingApproved) return undefined;
+  if (typeof raw !== "string") return undefined;
+  const parsed = Date.parse(raw);
+  if (Number.isNaN(parsed)) return undefined;
+  return new Date(parsed).toISOString();
 }
 
 function normalizeCreatedAt(raw: unknown): string {
@@ -697,8 +714,19 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
     typeof rawInput.id === "string" && rawInput.id.trim().length > 0
       ? rawInput.id
       : `req-${Date.now()}`;
+  const refId = ensureRegisteredRefId({
+    existingRefId:
+      typeof rawInput.refId === "string" && validateRefId(rawInput.refId)
+        ? rawInput.refId
+        : undefined,
+    kind: "DOC",
+    id,
+    projectId: id,
+  });
 
   const status = normalizeStatus(rawInput.status);
+  const sharingApproved = normalizeSharingApproved(rawInput.sharingApproved);
+  const sharingApprovedAt = normalizeSharingApprovedAt(rawInput.sharingApprovedAt, sharingApproved);
 
   const documentationLevel =
     typeof rawInput.documentationLevel === "string" && rawInput.documentationLevel.trim().length > 0
@@ -715,6 +743,7 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
 
   const request: PlatformRequest = {
     id,
+    refId,
     createdAt,
     audience,
     status,
@@ -734,6 +763,8 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
       typeof rawInput.replyDeadline === "string" ? rawInput.replyDeadline : undefined,
     distribution: normalizedDistribution.length > 0 ? normalizedDistribution : undefined,
     recipients: recipients.length > 0 ? recipients : undefined,
+    sharingApproved,
+    sharingApprovedAt,
     actions,
     documentationLevel,
     riskProfile,
@@ -807,4 +838,25 @@ export function subscribeRequests(callback: () => void): () => void {
     window.removeEventListener("storage", onStorage);
     window.removeEventListener(REQUESTS_UPDATED_EVENT, callback);
   };
+}
+
+export function setRequestPropertySharingApproval(
+  requestId: string,
+  sharingApproved: boolean
+): PlatformRequest | null {
+  const existing = listRequests();
+  if (existing.length === 0) return null;
+
+  const now = new Date().toISOString();
+  const next = existing.map((request) => {
+    if (request.id !== requestId) return request;
+    return {
+      ...request,
+      sharingApproved,
+      sharingApprovedAt: sharingApproved ? now : undefined,
+    };
+  });
+
+  const updated = replaceRequests(next);
+  return updated.find((request) => request.id === requestId) || null;
 }

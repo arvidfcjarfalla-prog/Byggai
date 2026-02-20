@@ -5,7 +5,7 @@ import { readProjectSnapshotFromStorage } from "./project-snapshot";
 import type { PlatformRequest, RequestAudience } from "./requests-store";
 import { listRequests } from "./requests-store";
 
-export type ScheduleZoom = "month" | "quarter" | "year";
+export type ScheduleZoom = "week" | "month" | "quarter" | "year";
 export type ScheduleGroupBy = "phase" | "category" | "project";
 export type ScheduleTaskCategory = "pre" | "build" | "post" | "maintenance";
 export type ScheduleTaskStatus = "planned" | "in_progress" | "blocked" | "done";
@@ -175,10 +175,13 @@ function normalizeSchedule(
     tasks,
     viewSettings: {
       zoom:
+        input.viewSettings?.zoom === "week" ||
         input.viewSettings?.zoom === "month" ||
         input.viewSettings?.zoom === "year"
           ? input.viewSettings.zoom
-          : "quarter",
+          : input.viewSettings?.zoom === "quarter"
+            ? "month"
+            : "month",
       showWeekends: Boolean(input.viewSettings?.showWeekends),
       groupBy:
         input.viewSettings?.groupBy === "category" ||
@@ -360,7 +363,7 @@ export function generateDefaultSchedule(context: ScheduleProjectContext): Projec
     endDate,
     tasks: allTasks,
     viewSettings: {
-      zoom: "quarter",
+      zoom: "month",
       showWeekends: false,
       groupBy: "phase",
     },

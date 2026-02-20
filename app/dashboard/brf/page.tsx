@@ -50,6 +50,7 @@ export default function BrfDashboardPage() {
         { href: "/timeline", label: "Timeline" },
         { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
         { href: "/dashboard/brf/dokumentinkorg", label: "Avtalsinkorg" },
+        { href: "/dashboard/brf/filer", label: "Filer" },
         { href: "/brf/start", label: "Initiera BRF-projekt" },
       ]}
       cards={[
@@ -78,10 +79,10 @@ export default function BrfDashboardPage() {
           ctaHref: "/dashboard/brf/fastighet",
         },
         {
-          title: "Timeline",
-          body: "Planera pre/build/post och underhåll över flera år i en redigerbar Gantt-tidslinje.",
-          ctaLabel: "Öppna timeline",
-          ctaHref: "/timeline",
+          title: "Tidslinje",
+          body: "Följ projektstatus med milstolpar och händelser från förfrågan till avtal, ÄTA och avslut.",
+          ctaLabel: "Öppna tidslinje",
+          ctaHref: "/dashboard/brf/tidslinje",
         },
         {
           title: "Mina förfrågningar",

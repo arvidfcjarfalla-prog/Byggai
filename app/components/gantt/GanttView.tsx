@@ -1,15 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ScheduleGroupBy, ScheduleTask, ScheduleZoom } from "../../lib/schedule";
-import {
-  addDays,
-  buildTimeBuckets,
-  diffDays,
-  getDayWidth,
-  getScheduleBounds,
-  toTaskBarPosition,
-} from "./gantt-utils";
+import { addDays, diffDays, getScheduleBounds } from "./gantt-utils";
+import { buildHeader, dateToX, getBasePxPerDay, type Scale } from "../../lib/gantt/scale";
 
 type DragMode = "move" | "resize-start" | "resize-end";
 
@@ -21,9 +15,20 @@ interface DragState {
   initialEndDate: string;
 }
 
-type GroupRow =
-  | { type: "group"; id: string; label: string }
-  | { type: "task"; id: string; task: ScheduleTask };
+interface TaskGroup {
+  id: string;
+  label: string;
+  tasks: ScheduleTask[];
+}
+
+type DisplayRow =
+  | { kind: "group"; groupId: string; label: string }
+  | { kind: "task"; groupId: string; task: ScheduleTask };
+
+const LEFT_COLUMN_WIDTH = 420;
+const START_COLUMN_WIDTH = 120;
+const ROW_HEIGHT = 44;
+const MAX_BODY_HEIGHT = 560;
 
 function statusClass(status: ScheduleTask["status"]): string {
   if (status === "done") return "bg-emerald-500";
@@ -50,29 +55,40 @@ function groupLabel(task: ScheduleTask, groupBy: ScheduleGroupBy): string {
   return task.phase || "Övrigt";
 }
 
-function buildRows(tasks: ScheduleTask[], groupBy: ScheduleGroupBy): GroupRow[] {
+function sortTasks(a: ScheduleTask, b: ScheduleTask): number {
+  if (a.startDate === b.startDate) return a.title.localeCompare(b.title, "sv");
+  return a.startDate.localeCompare(b.startDate, "sv");
+}
+
+function buildGroups(tasks: ScheduleTask[], groupBy: ScheduleGroupBy): TaskGroup[] {
   const byGroup = new Map<string, ScheduleTask[]>();
   tasks.forEach((task) => {
     const key = groupLabel(task, groupBy);
-    const existing = byGroup.get(key) || [];
-    existing.push(task);
-    byGroup.set(key, existing);
+    const list = byGroup.get(key) || [];
+    list.push(task);
+    byGroup.set(key, list);
   });
 
-  const rows: GroupRow[] = [];
-  Array.from(byGroup.entries())
+  return Array.from(byGroup.entries())
     .sort(([a], [b]) => a.localeCompare(b, "sv"))
-    .forEach(([label, groupTasks]) => {
-      rows.push({ type: "group", id: `g-${label}`, label });
-      groupTasks
-        .slice()
-        .sort((a, b) => a.startDate.localeCompare(b.startDate, "sv"))
-        .forEach((task) => {
-          rows.push({ type: "task", id: task.id, task });
-        });
-    });
+    .map(([label, groupTasks]) => ({
+      id: `group-${label}`,
+      label,
+      tasks: [...groupTasks].sort(sortTasks),
+    }));
+}
 
-  return rows;
+function clampRange(startDate: string, endDate: string): { startDate: string; endDate: string } {
+  if (new Date(`${endDate}T00:00:00`).getTime() < new Date(`${startDate}T00:00:00`).getTime()) {
+    return { startDate, endDate: startDate };
+  }
+  return { startDate, endDate };
+}
+
+function toScale(zoom: ScheduleZoom): Scale {
+  if (zoom === "week") return "week";
+  if (zoom === "year") return "year";
+  return "month";
 }
 
 export function GanttView({
@@ -83,6 +99,8 @@ export function GanttView({
   scheduleStartDate,
   scheduleEndDate,
   editable = false,
+  zoomFactor = 1,
+  scrollToTodayToken,
   onTaskClick,
   onTaskDatesChange,
 }: {
@@ -93,29 +111,60 @@ export function GanttView({
   scheduleStartDate?: string;
   scheduleEndDate?: string;
   editable?: boolean;
+  zoomFactor?: number;
+  scrollToTodayToken?: number;
   onTaskClick?: (task: ScheduleTask) => void;
   onTaskDatesChange?: (taskId: string, nextStartDate: string, nextEndDate: string) => void;
 }) {
   const [dragState, setDragState] = useState<DragState | null>(null);
-  const [previewDates, setPreviewDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
-  const dayWidth = getDayWidth(zoom);
-  const rows = useMemo(() => buildRows(tasks, groupBy), [groupBy, tasks]);
+  const [previewDates, setPreviewDates] = useState<
+    Record<string, { startDate: string; endDate: string }>
+  >({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const groups = useMemo(() => buildGroups(tasks, groupBy), [groupBy, tasks]);
+  const effectiveCollapsed = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    groups.forEach((group) => {
+      map[group.id] = collapsedGroups[group.id] ?? false;
+    });
+    return map;
+  }, [collapsedGroups, groups]);
+
+  const rows = useMemo(() => {
+    const next: DisplayRow[] = [];
+    groups.forEach((group) => {
+      next.push({ kind: "group", groupId: group.id, label: group.label });
+      if (!effectiveCollapsed[group.id]) {
+        group.tasks.forEach((task) => next.push({ kind: "task", groupId: group.id, task }));
+      }
+    });
+    return next;
+  }, [effectiveCollapsed, groups]);
 
   const bounds = useMemo(
     () => getScheduleBounds(tasks, scheduleStartDate, scheduleEndDate),
     [scheduleEndDate, scheduleStartDate, tasks]
   );
 
-  const paddedStart = useMemo(() => addDays(bounds.startDate, -14), [bounds.startDate]);
-  const paddedEnd = useMemo(() => addDays(bounds.endDate, 21), [bounds.endDate]);
-  const timelineDays = Math.max(1, diffDays(paddedStart, paddedEnd) + 1);
-  const timelineWidth = timelineDays * dayWidth;
-  const buckets = useMemo(
-    () => buildTimeBuckets(paddedStart, paddedEnd, zoom),
-    [paddedEnd, paddedStart, zoom]
+  const scale = toScale(zoom);
+  const dayWidth = useMemo(
+    () => Math.max(2, getBasePxPerDay(scale) * Math.max(0.5, zoomFactor)),
+    [scale, zoomFactor]
   );
+  const header = useMemo(
+    () => buildHeader({ startDate: bounds.startDate, endDate: bounds.endDate }, scale, { padDays: 30 }),
+    [bounds.endDate, bounds.startDate, scale]
+  );
+  const paddedStart = header.paddedStartDate;
+  const timelineDays = header.totalDays;
+  const timelineWidth = Math.max(1, timelineDays * dayWidth);
+
   const today = new Date();
-  const todayDate = `${today.getFullYear()}-${`${today.getMonth() + 1}`.padStart(2, "0")}-${`${today.getDate()}`.padStart(2, "0")}`;
+  const todayDate = `${today.getFullYear()}-${`${today.getMonth() + 1}`.padStart(2, "0")}-${`${today
+    .getDate()
+    .toString()
+    .padStart(2, "0")}`}`;
   const todayOffset = diffDays(paddedStart, todayDate);
   const showTodayLine = todayOffset >= 0 && todayOffset <= timelineDays;
 
@@ -124,42 +173,21 @@ export function GanttView({
 
     const onPointerMove = (event: PointerEvent) => {
       const deltaDays = Math.round((event.clientX - dragState.pointerStartX) / dayWidth);
-      if (deltaDays === 0) {
-        setPreviewDates((current) => ({
-          ...current,
-          [dragState.taskId]: {
-            startDate: dragState.initialStartDate,
-            endDate: dragState.initialEndDate,
-          },
-        }));
-        return;
-      }
+      let nextStartDate = dragState.initialStartDate;
+      let nextEndDate = dragState.initialEndDate;
 
-      const movedStart = addDays(dragState.initialStartDate, deltaDays);
-      const movedEnd = addDays(dragState.initialEndDate, deltaDays);
-      let nextStartDate = movedStart;
-      let nextEndDate = movedEnd;
-
-      if (dragState.mode === "resize-start") {
+      if (dragState.mode === "move") {
         nextStartDate = addDays(dragState.initialStartDate, deltaDays);
-        if (new Date(`${nextStartDate}T00:00:00`).getTime() > new Date(`${dragState.initialEndDate}T00:00:00`).getTime()) {
-          nextStartDate = dragState.initialEndDate;
-        }
-        nextEndDate = dragState.initialEndDate;
-      } else if (dragState.mode === "resize-end") {
         nextEndDate = addDays(dragState.initialEndDate, deltaDays);
-        if (new Date(`${nextEndDate}T00:00:00`).getTime() < new Date(`${dragState.initialStartDate}T00:00:00`).getTime()) {
-          nextEndDate = dragState.initialStartDate;
-        }
-        nextStartDate = dragState.initialStartDate;
+      } else if (dragState.mode === "resize-start") {
+        nextStartDate = addDays(dragState.initialStartDate, deltaDays);
+      } else {
+        nextEndDate = addDays(dragState.initialEndDate, deltaDays);
       }
 
       setPreviewDates((current) => ({
         ...current,
-        [dragState.taskId]: {
-          startDate: nextStartDate,
-          endDate: nextEndDate,
-        },
+        [dragState.taskId]: clampRange(nextStartDate, nextEndDate),
       }));
     };
 
@@ -195,83 +223,211 @@ export function GanttView({
     return offsets;
   }, [paddedStart, showWeekends, timelineDays]);
 
+  const headerScrollRef = useRef<HTMLDivElement | null>(null);
+  const leftBodyRef = useRef<HTMLDivElement | null>(null);
+  const rightBodyRef = useRef<HTMLDivElement | null>(null);
+  const syncXRef = useRef<"header" | "body" | null>(null);
+  const syncYRef = useRef<"left" | "right" | null>(null);
+
+  useEffect(() => {
+    const headerScroll = headerScrollRef.current;
+    const leftBody = leftBodyRef.current;
+    const rightBody = rightBodyRef.current;
+    if (!headerScroll || !leftBody || !rightBody) return;
+
+    const onHeaderScroll = () => {
+      if (syncXRef.current === "body") return;
+      syncXRef.current = "header";
+      rightBody.scrollLeft = headerScroll.scrollLeft;
+      requestAnimationFrame(() => {
+        syncXRef.current = null;
+      });
+    };
+
+    const onRightBodyScroll = () => {
+      if (syncXRef.current !== "header") {
+        syncXRef.current = "body";
+        headerScroll.scrollLeft = rightBody.scrollLeft;
+      }
+      if (syncYRef.current !== "left") {
+        syncYRef.current = "right";
+        leftBody.scrollTop = rightBody.scrollTop;
+      }
+      requestAnimationFrame(() => {
+        syncXRef.current = null;
+        syncYRef.current = null;
+      });
+    };
+
+    const onLeftBodyScroll = () => {
+      if (syncYRef.current === "right") return;
+      syncYRef.current = "left";
+      rightBody.scrollTop = leftBody.scrollTop;
+      requestAnimationFrame(() => {
+        syncYRef.current = null;
+      });
+    };
+
+    headerScroll.addEventListener("scroll", onHeaderScroll, { passive: true });
+    rightBody.addEventListener("scroll", onRightBodyScroll, { passive: true });
+    leftBody.addEventListener("scroll", onLeftBodyScroll, { passive: true });
+
+    return () => {
+      headerScroll.removeEventListener("scroll", onHeaderScroll);
+      rightBody.removeEventListener("scroll", onRightBodyScroll);
+      leftBody.removeEventListener("scroll", onLeftBodyScroll);
+    };
+  }, [timelineWidth]);
+
+  useEffect(() => {
+    if (scrollToTodayToken === undefined) return;
+    const rightBody = rightBodyRef.current;
+    const headerScroll = headerScrollRef.current;
+    if (!rightBody || !headerScroll) return;
+
+    const targetDate = showTodayLine ? todayDate : bounds.startDate;
+    const targetLeft = Math.max(
+      0,
+      dateToX(targetDate, paddedStart, dayWidth) - rightBody.clientWidth / 2
+    );
+    rightBody.scrollTo({ left: targetLeft, behavior: "smooth" });
+    headerScroll.scrollTo({ left: targetLeft, behavior: "smooth" });
+  }, [bounds.startDate, dayWidth, paddedStart, scrollToTodayToken, showTodayLine, todayDate]);
+
   return (
     <div className="overflow-hidden rounded-2xl border border-[#E6DFD6] bg-white">
-      <div className="grid grid-cols-[320px_1fr] border-b border-[#E6DFD6] bg-[#FAF8F5]">
-        <div className="sticky left-0 z-10 border-r border-[#E6DFD6] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-[#8C7860]">
-          Task / fas
+      <div
+        className="grid border-b border-[#E6DFD6] bg-[#FAF8F5]"
+        style={{ gridTemplateColumns: `${LEFT_COLUMN_WIDTH}px 1fr` }}
+      >
+        <div className="sticky left-0 z-10 border-r border-[#E6DFD6] px-4 py-3">
+          <div
+            className="grid text-xs font-semibold uppercase tracking-wide text-[#8C7860]"
+            style={{ gridTemplateColumns: `1fr ${START_COLUMN_WIDTH}px` }}
+          >
+            <span>Namn</span>
+            <span className="text-right">Start</span>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <div className="relative h-12" style={{ width: timelineWidth }}>
-            {buckets.map((bucket) => {
-              const left = diffDays(paddedStart, bucket.startDate) * dayWidth;
-              const width = (diffDays(bucket.startDate, bucket.endDate) + 1) * dayWidth;
-              return (
+
+        <div ref={headerScrollRef} className="hide-scrollbar overflow-x-auto overflow-y-hidden">
+          <div style={{ width: timelineWidth }} className="relative">
+            <div className="relative h-8 border-b border-[#E8E3DC] bg-[#F3EEE7]">
+              {header.top.map((segment) => (
                 <div
-                  key={bucket.id}
-                  className="absolute bottom-0 top-0 border-r border-[#E6DFD6] px-2 py-1 text-[11px] font-semibold text-[#6B5A47]"
-                  style={{ left, width }}
+                  key={`top-${segment.id}`}
+                  className="absolute inset-y-0 flex items-center justify-center border-r border-[#E8E3DC] px-2 text-xs font-semibold text-[#6B5A47]"
+                  style={{
+                    left: dateToX(segment.startDate, paddedStart, dayWidth),
+                    width: segment.days * dayWidth,
+                  }}
                 >
-                  {bucket.label}
+                  <span className="truncate">{segment.label}</span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            <div className="relative h-8 bg-white">
+              {header.bottom.map((segment, index) => (
+                <div
+                  key={`bottom-${segment.id}`}
+                  className={`absolute inset-y-0 flex items-center justify-center border-r border-[#E8E3DC] px-1 text-xs font-medium text-[#766B60] ${
+                    index % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"
+                  }`}
+                  style={{
+                    left: dateToX(segment.startDate, paddedStart, dayWidth),
+                    width: segment.days * dayWidth,
+                  }}
+                >
+                  <span className="truncate">{segment.label}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-[320px_1fr]">
-        <div className="sticky left-0 z-10 border-r border-[#E6DFD6] bg-white">
+      <div className="grid" style={{ gridTemplateColumns: `${LEFT_COLUMN_WIDTH}px 1fr` }}>
+        <div ref={leftBodyRef} className="hide-scrollbar overflow-auto border-r border-[#E6DFD6] bg-white" style={{ maxHeight: MAX_BODY_HEIGHT }}>
           {rows.map((row) => {
-            if (row.type === "group") {
+            if (row.kind === "group") {
+              const collapsed = Boolean(effectiveCollapsed[row.groupId]);
               return (
-                <div
-                  key={row.id}
-                  className="flex h-11 items-center border-b border-[#F0EBE3] bg-[#FAF8F5] px-4 text-xs font-semibold uppercase tracking-wide text-[#8C7860]"
+                <button
+                  key={row.groupId}
+                  type="button"
+                  onClick={() =>
+                    setCollapsedGroups((current) => ({
+                      ...current,
+                      [row.groupId]: !collapsed,
+                    }))
+                  }
+                  className="grid h-11 w-full items-center border-b border-[#F0EBE3] bg-[#FAF8F5] px-4 text-left text-xs font-semibold uppercase tracking-wide text-[#8C7860] hover:bg-[#F6F2EC]"
+                  style={{ gridTemplateColumns: `1fr ${START_COLUMN_WIDTH}px` }}
                 >
-                  {row.label}
-                </div>
+                  <span className="truncate">{collapsed ? "▸" : "▾"} {row.label}</span>
+                  <span />
+                </button>
               );
             }
+
             return (
               <button
-                key={row.id}
+                key={row.task.id}
                 type="button"
                 onClick={() => onTaskClick?.(row.task)}
-                className="flex h-11 w-full items-center justify-between border-b border-[#F5F1EB] px-4 text-left text-sm hover:bg-[#FAF8F5]"
+                className="grid h-11 w-full items-center border-b border-[#F5F1EB] px-4 text-left text-sm hover:bg-[#FAF8F5]"
+                style={{ gridTemplateColumns: `1fr ${START_COLUMN_WIDTH}px` }}
               >
-                <span className="truncate pr-2 text-[#2A2520]">{row.task.title}</span>
-                <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(row.task.status)}`} />
+                <span className="flex min-w-0 items-center gap-2 pl-5">
+                  <span className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(row.task.status)}`} />
+                  <span className="truncate text-[#2A2520]">{row.task.title}</span>
+                </span>
+                <span className="truncate text-right text-xs font-mono text-[#6B5A47]">
+                  {row.task.startDate}
+                </span>
               </button>
             );
           })}
         </div>
 
-        <div className="overflow-x-auto">
-          <div className="relative" style={{ width: timelineWidth }}>
+        <div ref={rightBodyRef} className="hide-scrollbar overflow-auto bg-white" style={{ maxHeight: MAX_BODY_HEIGHT }}>
+          <div className="relative" style={{ width: timelineWidth, minHeight: rows.length * ROW_HEIGHT }}>
+            {header.bottom.map((segment, index) => (
+              <div
+                key={`bg-${segment.id}`}
+                className={`pointer-events-none absolute bottom-0 top-0 border-r border-[#E8E3DC] ${
+                  index % 2 === 0 ? "bg-white" : "bg-[#FAF8F5]"
+                }`}
+                style={{
+                  left: dateToX(segment.startDate, paddedStart, dayWidth),
+                  width: segment.days * dayWidth,
+                }}
+              />
+            ))}
+
             {weekendOffsets.map((offset) => (
               <div
-                key={`w-${offset}`}
-                className="absolute bottom-0 top-0 bg-[#FAF8F5]"
+                key={`weekend-${offset}`}
+                className="pointer-events-none absolute bottom-0 top-0 bg-[#F7F3EE]"
                 style={{ left: offset * dayWidth, width: dayWidth }}
               />
             ))}
 
             {showTodayLine && (
               <div
-                className="absolute bottom-0 top-0 z-20 w-0.5 bg-[#E7B54A]"
+                className="pointer-events-none absolute bottom-0 top-0 z-20 w-0.5 bg-[#E7B54A]"
                 style={{ left: todayOffset * dayWidth }}
               />
             )}
 
-            {rows.map((row, rowIndex) => {
-              const top = rowIndex * 44;
-              if (row.type === "group") {
+            {rows.map((row, index) => {
+              const top = index * ROW_HEIGHT;
+              if (row.kind === "group") {
                 return (
                   <div
-                    key={row.id}
+                    key={`grid-group-${row.groupId}-${index}`}
                     className="absolute left-0 right-0 border-b border-[#F0EBE3] bg-[#FAF8F5]"
-                    style={{ top, height: 44 }}
+                    style={{ top, height: ROW_HEIGHT }}
                   />
                 );
               }
@@ -280,19 +436,22 @@ export function GanttView({
               const task = preview
                 ? { ...row.task, startDate: preview.startDate, endDate: preview.endDate }
                 : row.task;
-              const bar = toTaskBarPosition(task, paddedStart, dayWidth);
+              const left = dateToX(task.startDate, paddedStart, dayWidth);
+              const width = Math.max(26, (diffDays(task.startDate, task.endDate) + 1) * dayWidth);
 
               return (
                 <div
-                  key={row.id}
+                  key={`grid-task-${row.task.id}`}
                   className="absolute left-0 right-0 border-b border-[#F5F1EB]"
-                  style={{ top, height: 44 }}
+                  style={{ top, height: ROW_HEIGHT }}
                 >
                   <button
                     type="button"
                     onClick={() => onTaskClick?.(row.task)}
-                    className={`absolute top-1/2 h-7 -translate-y-1/2 rounded-md px-2 text-left text-[11px] font-semibold text-white shadow ${statusClass(row.task.status)}`}
-                    style={{ left: bar.left, width: Math.max(26, bar.width) }}
+                    className={`absolute top-1/2 h-7 -translate-y-1/2 rounded-md px-2 text-left text-[11px] font-semibold text-white shadow ${statusClass(
+                      row.task.status
+                    )}`}
+                    style={{ left, width }}
                   >
                     <span className="truncate">{row.task.title}</span>
                   </button>
@@ -301,6 +460,7 @@ export function GanttView({
                     <>
                       <button
                         type="button"
+                        onClick={() => onTaskClick?.(row.task)}
                         aria-label="Flytta task"
                         onPointerDown={(event) => {
                           event.preventDefault();
@@ -312,8 +472,8 @@ export function GanttView({
                             initialEndDate: row.task.endDate,
                           });
                         }}
-                        className="absolute top-1/2 h-7 -translate-y-1/2 rounded-md border border-white/30 bg-white/10"
-                        style={{ left: bar.left, width: Math.max(26, bar.width) }}
+                        className="absolute top-1/2 h-7 -translate-y-1/2 cursor-grab rounded-md border border-white/30 bg-white/10"
+                        style={{ left, width }}
                       />
                       <button
                         type="button"
@@ -329,7 +489,7 @@ export function GanttView({
                           });
                         }}
                         className="absolute top-1/2 h-7 w-2 -translate-y-1/2 rounded-l-md bg-black/25"
-                        style={{ left: bar.left }}
+                        style={{ left }}
                       />
                       <button
                         type="button"
@@ -345,18 +505,16 @@ export function GanttView({
                           });
                         }}
                         className="absolute top-1/2 h-7 w-2 -translate-y-1/2 rounded-r-md bg-black/25"
-                        style={{ left: bar.left + Math.max(26, bar.width) - 8 }}
+                        style={{ left: left + width - 8 }}
                       />
                     </>
                   )}
                 </div>
               );
             })}
-            <div style={{ height: rows.length * 44 }} />
           </div>
         </div>
       </div>
     </div>
   );
 }
-

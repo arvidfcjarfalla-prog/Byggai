@@ -32,6 +32,17 @@ function formatSek(value: number): string {
   return `${new Intl.NumberFormat("sv-SE").format(value)} kr`;
 }
 
+function formatOptional(value: string | undefined): string {
+  return value && value.trim().length > 0 ? value : "Ej angivet";
+}
+
+function recipientStatusLabel(status: string): string {
+  if (status === "responded") return "Svarat";
+  if (status === "opened") return "Öppnad";
+  if (status === "declined") return "Avböjd";
+  return "Skickad";
+}
+
 export default function EntreprenorForfragningarPage() {
   const router = useRouter();
   const { user, ready } = useAuth();
@@ -188,27 +199,202 @@ export default function EntreprenorForfragningarPage() {
             </article>
 
             <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-bold text-[#2A2520]">Åtgärder i förfrågan</h3>
+              <h3 className="text-lg font-bold text-[#2A2520]">Omfattning och inskickad information</h3>
+              {(selectedRequest.scope.scopeItems ?? []).length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {(selectedRequest.scope.scopeItems ?? []).map((item, index) => (
+                    <div
+                      key={`${item.title}-${index}`}
+                      className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2"
+                    >
+                      <p className="text-sm font-semibold text-[#2A2520]">{item.title}</p>
+                      {item.details && (
+                        <p className="mt-1 text-xs text-[#6B5A47]">{item.details}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="mt-3 space-y-2">
-                {(selectedRequest.scope.actions ?? selectedRequest.actions ?? []).slice(0, 10).map((action) => (
-                  <div
+                {(selectedRequest.scope.actions ?? selectedRequest.actions ?? []).map((action) => (
+                  <article
                     key={action.id}
-                    className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2"
+                    className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-3"
                   >
                     <p className="text-sm font-semibold text-[#2A2520]">{action.title}</p>
                     <p className="mt-1 text-xs text-[#766B60]">
                       {action.category} · {action.plannedYear} · {formatSek(action.estimatedPriceSek)}
                     </p>
+                    {action.details && (
+                      <p className="mt-2 text-xs text-[#6B5A47]">{action.details}</p>
+                    )}
+                    {action.extraDetails && action.extraDetails.length > 0 && (
+                      <dl className="mt-2 grid gap-1 text-xs text-[#6B5A47] md:grid-cols-2">
+                        {action.extraDetails.map((detail) => (
+                          <div key={`${action.id}-${detail.label}`}>
+                            <dt className="font-semibold text-[#2A2520]">{detail.label}</dt>
+                            <dd>{detail.value || "Ej ifyllt"}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </article>
+                ))}
+                {(selectedRequest.scope.actions ?? selectedRequest.actions ?? []).length === 0 &&
+                  (selectedRequest.scope.scopeItems ?? []).length === 0 && (
+                  <p className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2 text-sm text-[#6B5A47]">
+                    Ingen omfattning registrerad i detta underlag.
+                  </p>
+                )}
+              </div>
+            </article>
+
+            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-bold text-[#2A2520]">Dokument och underlag</h3>
+              <p className="mt-2 text-sm text-[#6B5A47]">
+                {selectedRequest.documentSummary?.totalFiles ?? selectedRequest.files?.length ?? 0} filer inskickade
+              </p>
+              {selectedRequest.documentSummary?.highlights &&
+                selectedRequest.documentSummary.highlights.length > 0 && (
+                  <ul className="mt-2 space-y-1 text-xs text-[#766B60]">
+                    {selectedRequest.documentSummary.highlights.map((highlight) => (
+                      <li key={highlight}>• {highlight}</li>
+                    ))}
+                  </ul>
+                )}
+
+              <div className="mt-3 space-y-2">
+                {(selectedRequest.files ?? []).map((file) => (
+                  <div
+                    key={file.id ?? `${file.name}-${file.uploadedAt}`}
+                    className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2"
+                  >
+                    <p className="text-sm font-semibold text-[#2A2520]">{file.name}</p>
+                    <p className="mt-1 text-xs text-[#766B60]">
+                      {file.fileTypeLabel} · {file.sizeKb.toFixed(1)} KB · {formatDate(file.uploadedAt)}
+                    </p>
+                    {file.tags && file.tags.length > 0 && (
+                      <p className="mt-1 text-xs text-[#6B5A47]">Taggar: {file.tags.join(", ")}</p>
+                    )}
                   </div>
                 ))}
-                {(selectedRequest.scope.actions ?? selectedRequest.actions ?? []).length === 0 && (
+                {(selectedRequest.files ?? []).length === 0 && (
                   <p className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2 text-sm text-[#6B5A47]">
-                    Inga åtgärder registrerade i detta underlag.
+                    Inga filer registrerade för förfrågan.
+                  </p>
+                )}
+              </div>
+            </article>
+
+            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-bold text-[#2A2520]">Fastighetsinformation</h3>
+              {!selectedRequest.sharingApproved && (
+                <p className="mt-3 rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2 text-sm text-[#6B5A47]">
+                  Beställaren har inte godkänt delning av fastighetsinformation ännu.
+                </p>
+              )}
+
+              {selectedRequest.sharingApproved && selectedRequest.propertySnapshot && (
+                <dl className="mt-3 grid gap-2 text-sm md:grid-cols-2">
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Objekt</dt>
+                    <dd className="mt-1 font-semibold text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.title)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Adress</dt>
+                    <dd className="mt-1 font-semibold text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.address)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Byggår</dt>
+                    <dd className="mt-1 text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.buildingYear)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Omfattning</dt>
+                    <dd className="mt-1 text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.areaSummary)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Tillträde/logistik</dt>
+                    <dd className="mt-1 text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.accessAndLogistics)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Kända begränsningar</dt>
+                    <dd className="mt-1 text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.knownConstraints)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Kontakt</dt>
+                    <dd className="mt-1 text-[#2A2520]">
+                      {formatOptional(selectedRequest.propertySnapshot.contactName)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">Kontaktuppgifter</dt>
+                    <dd className="mt-1 text-[#2A2520]">
+                      {[
+                        selectedRequest.propertySnapshot.contactEmail,
+                        selectedRequest.propertySnapshot.contactPhone,
+                      ]
+                        .filter((value): value is string => Boolean(value && value.trim().length > 0))
+                        .join(" · ") || "Ej angivet"}
+                    </dd>
+                  </div>
+                </dl>
+              )}
+
+              {selectedRequest.sharingApproved && !selectedRequest.propertySnapshot && (
+                <p className="mt-3 rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2 text-sm text-[#6B5A47]">
+                  Ingen fastighetsinformation är registrerad i denna förfrågan.
+                </p>
+              )}
+            </article>
+
+            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+              <h3 className="text-lg font-bold text-[#2A2520]">Mottagare och kompletteringar</h3>
+              <div className="mt-3 space-y-2">
+                {(selectedRequest.recipients ?? []).map((recipient) => (
+                  <div
+                    key={recipient.id}
+                    className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2"
+                  >
+                    <p className="text-sm font-semibold text-[#2A2520]">{recipient.companyName}</p>
+                    <p className="mt-1 text-xs text-[#766B60]">
+                      {recipient.email || "E-post saknas"} · {recipientStatusLabel(recipient.status)}
+                    </p>
+                  </div>
+                ))}
+                {(selectedRequest.recipients ?? []).length === 0 && (
+                  <p className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2 text-sm text-[#6B5A47]">
+                    Inga mottagare registrerade i förfrågan.
                   </p>
                 )}
               </div>
 
-              <div className="mt-4">
+              <div className="mt-3 space-y-2">
+                {selectedRequest.missingInfo.map((item) => (
+                  <p key={item} className="rounded-xl border border-[#F0E3D0] bg-[#FFF9F1] px-3 py-2 text-sm text-[#6B5A47]">
+                    {item}
+                  </p>
+                ))}
+                {selectedRequest.missingInfo.length === 0 && (
+                  <p className="rounded-xl border border-[#D7E8D2] bg-[#F3FAF0] px-3 py-2 text-sm text-[#355C38]">
+                    Inga uppenbara kompletteringar markerade.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   href={`/dashboard/entreprenor/meddelanden?requestId=${selectedRequest.id}`}
                   className="inline-flex rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]"

@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardShell } from "../components/dashboard-shell";
 import { useAuth } from "../components/auth-context";
-import { LegacyActionTimelineGantt } from "../components/gantt/LegacyActionTimelineGantt";
 import { GanttToolbar } from "../components/gantt/GanttToolbar";
 import { GanttView } from "../components/gantt/GanttView";
 import { PortfolioGantt } from "../components/gantt/PortfolioGantt";
@@ -20,6 +19,8 @@ import {
   subscribeSchedules,
   writeSchedule,
   type ProjectSchedule,
+  type ScheduleGroupBy,
+  type ScheduleZoom,
   type ScheduleTask,
 } from "../lib/schedule";
 
@@ -32,7 +33,7 @@ function navForRole(role: "brf" | "privat") {
       { href: "/dashboard/brf", label: "Översikt" },
       { href: "/dashboard/brf/fastighet", label: "Fastighet" },
       { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
-      { href: "/timeline", label: "Timeline" },
+      { href: "/dashboard/brf/planering", label: "Planering (Gantt)" },
       { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
       { href: "/brf/start", label: "Initiera BRF-projekt" },
     ];
@@ -40,7 +41,7 @@ function navForRole(role: "brf" | "privat") {
   return [
     { href: "/dashboard/privat", label: "Översikt" },
     { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
-    { href: "/timeline", label: "Timeline" },
+    { href: "/dashboard/privat/planering", label: "Planering (Gantt)" },
     { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
     { href: "/start", label: "Initiera / fortsätt projekt" },
   ];
@@ -86,17 +87,33 @@ function toEmptyTask(
   };
 }
 
+function adjustZoomFactor(current: number, direction: "in" | "out"): number {
+  const delta = direction === "in" ? 0.2 : -0.2;
+  return Math.max(0.6, Math.min(3, Number((current + delta).toFixed(2))));
+}
+
 export default function TimelinePage() {
+  const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialProjectId = searchParams.get("projectId");
   const initialActionTaskId = searchParams.get("actionTaskId");
   const { user, ready } = useAuth();
   const audienceFilter = user?.role === "brf" ? "brf" : "privat";
+  const planningBasePath =
+    user?.role === "brf" ? "/dashboard/brf/planering" : "/dashboard/privat/planering";
   const [mode, setMode] = useState<TimelineMode>(
     initialActionTaskId ? "action" : initialProjectId ? "project" : "overview"
   );
-  const [overviewZoom, setOverviewZoom] = useState<"month" | "quarter" | "year">("quarter");
+  const [overviewZoom, setOverviewZoom] = useState<ScheduleZoom>("month");
+  const [overviewShowWeekends, setOverviewShowWeekends] = useState(false);
+  const [overviewGroupBy, setOverviewGroupBy] = useState<ScheduleGroupBy>("project");
+  const [overviewZoomFactor, setOverviewZoomFactor] = useState(1);
+  const [overviewTodayToken, setOverviewTodayToken] = useState(0);
+  const [projectZoomFactor, setProjectZoomFactor] = useState(1);
+  const [projectTodayToken, setProjectTodayToken] = useState(0);
+  const [actionZoomFactor, setActionZoomFactor] = useState(1);
+  const [actionTodayToken, setActionTodayToken] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [yearFrom, setYearFrom] = useState(2025);
@@ -120,6 +137,13 @@ export default function TimelinePage() {
       router.replace("/dashboard/entreprenor");
     }
   }, [ready, router, user]);
+
+  useEffect(() => {
+    if (!ready || !user || user.role === "entreprenor") return;
+    if (pathname !== "/timeline") return;
+    const query = searchParams.toString();
+    router.replace(query ? `${planningBasePath}?${query}` : planningBasePath, { scroll: false });
+  }, [pathname, planningBasePath, ready, router, searchParams, user]);
 
   useEffect(
     () =>
@@ -196,6 +220,44 @@ export default function TimelinePage() {
         ),
     [categoryFilter, items, projectFilter, yearFrom, yearTo]
   );
+  const maintenanceProjectOptions = useMemo(
+    () =>
+      items.map((item) => ({
+        projectId: item.context.projectId,
+        projectTitle: item.context.title,
+      })),
+    [items]
+  );
+  const maintenanceOverviewTaskMetaById = useMemo(() => {
+    const meta = new Map<string, { projectId: string; actionTaskId: string }>();
+    maintenanceActionRows.forEach((row) => {
+      meta.set(row.actionTaskId, {
+        projectId: row.projectId,
+        actionTaskId: row.actionTaskId,
+      });
+    });
+    return meta;
+  }, [maintenanceActionRows]);
+  const maintenanceOverviewTasks = useMemo(() => {
+    return maintenanceActionRows.map((row) => ({
+      id: row.actionTaskId,
+      projectId: row.projectTitle,
+      title: row.title,
+      category: "maintenance" as const,
+      phase: "Underhåll",
+      startDate: row.startDate,
+      endDate: row.endDate,
+      status: row.status,
+      dependencies: [],
+      kind: "maintenance_action" as const,
+      source: "manual" as const,
+      updatedAt: new Date().toISOString(),
+    }));
+  }, [maintenanceActionRows]);
+  const effectiveOverviewProjectId = useMemo(() => {
+    if (projectFilter !== "all") return projectFilter;
+    return maintenanceProjectOptions[0]?.projectId || "";
+  }, [maintenanceProjectOptions, projectFilter]);
 
   const actionOverviewStartDate = useMemo(() => {
     if (maintenanceActionRows.length === 0) return `${yearFrom}-01-01`;
@@ -313,7 +375,10 @@ export default function TimelinePage() {
     setSelectedActionTaskId(null);
     setSelectedTaskId(null);
     setMode("project");
-    router.replace(`/timeline?projectId=${encodeURIComponent(projectId)}`, { scroll: false });
+    // QA navigation: base -> project query should keep base in history so browser Back returns base.
+    router.push(`${planningBasePath}?projectId=${encodeURIComponent(projectId)}`, {
+      scroll: false,
+    });
   };
 
   const openActionView = (projectId: string, actionTaskId: string) => {
@@ -324,8 +389,8 @@ export default function TimelinePage() {
     setSelectedActionTaskId(actionTaskId);
     setSelectedTaskId(null);
     setMode("action");
-    router.replace(
-      `/timeline?projectId=${encodeURIComponent(projectId)}&actionTaskId=${encodeURIComponent(
+    router.push(
+      `${planningBasePath}?projectId=${encodeURIComponent(projectId)}&actionTaskId=${encodeURIComponent(
         actionTaskId
       )}`,
       { scroll: false }
@@ -366,6 +431,119 @@ export default function TimelinePage() {
       setNotice("Beroendevarning: minst en task bryter beroendelogiken.");
     } else {
       setNotice(null);
+    }
+  };
+
+  const onMaintenanceActionDatesChange = (
+    projectId: string,
+    actionTaskId: string,
+    nextStartDate: string,
+    nextEndDate: string
+  ) => {
+    const target = items.find((item) => item.context.projectId === projectId);
+    if (!target) return;
+    const previousTask = target.schedule.tasks.find((task) => task.id === actionTaskId);
+    if (!previousTask) return;
+
+    const changed = applyTaskDateChange(
+      target.schedule.tasks,
+      actionTaskId,
+      nextStartDate,
+      nextEndDate
+    );
+
+    let nextSchedule: ProjectSchedule = {
+      ...target.schedule,
+      tasks: changed.tasks,
+      startDate: changed.tasks.reduce(
+        (acc, task) => (task.startDate < acc ? task.startDate : acc),
+        changed.tasks[0]?.startDate || target.schedule.startDate
+      ),
+      endDate: changed.tasks.reduce(
+        (acc, task) => (task.endDate > acc ? task.endDate : acc),
+        changed.tasks[0]?.endDate || target.schedule.endDate
+      ),
+    };
+    nextSchedule = appendScheduleLog(nextSchedule, [
+      {
+        taskId: actionTaskId,
+        field: "date_range",
+        fromValue: `${previousTask.startDate} -> ${previousTask.endDate}`,
+        toValue: `${nextStartDate} -> ${nextEndDate}`,
+        actor: user?.email || "local-user",
+      },
+    ]);
+
+    updateSchedule(projectId, () => nextSchedule);
+    setNotice(
+      changed.warnings.length > 0
+        ? "Beroendevarning: minst en task bryter beroendelogiken."
+        : "Aktivitet uppdaterad."
+    );
+  };
+
+  const onAddMaintenanceAction = (projectId: string, title: string): string | null => {
+    const target = items.find((item) => item.context.projectId === projectId);
+    if (!target) return null;
+
+    const baseDate = target.schedule.endDate;
+    const task: ScheduleTask = {
+      id: `${projectId}-maintenance-${Date.now()}`,
+      projectId,
+      title,
+      category: "maintenance",
+      phase: "Underhåll",
+      startDate: baseDate,
+      endDate: baseDate,
+      status: "planned",
+      dependencies: [],
+      kind: "maintenance_action",
+      source: "manual",
+      updatedAt: new Date().toISOString(),
+    };
+
+    let nextSchedule: ProjectSchedule = {
+      ...target.schedule,
+      tasks: [...target.schedule.tasks, task],
+      endDate: task.endDate > target.schedule.endDate ? task.endDate : target.schedule.endDate,
+    };
+    nextSchedule = appendScheduleLog(nextSchedule, [
+      {
+        taskId: task.id,
+        field: "task_created",
+        fromValue: "-",
+        toValue: task.title,
+        actor: user?.email || "local-user",
+      },
+    ]);
+    updateSchedule(projectId, () => nextSchedule);
+    setNotice(`Ny aktivitet skapad i ${target.context.title}.`);
+    return task.id;
+  };
+
+  const onOverviewTaskDatesChange = (
+    taskId: string,
+    nextStartDate: string,
+    nextEndDate: string
+  ) => {
+    const target = maintenanceOverviewTaskMetaById.get(taskId);
+    if (!target) return;
+    onMaintenanceActionDatesChange(
+      target.projectId,
+      target.actionTaskId,
+      nextStartDate,
+      nextEndDate
+    );
+  };
+
+  const onAddOverviewTask = () => {
+    if (!effectiveOverviewProjectId) {
+      setNotice("Välj ett projekt för att lägga till aktivitet.");
+      return;
+    }
+    const createdId = onAddMaintenanceAction(effectiveOverviewProjectId, "Ny aktivitet");
+    if (createdId) {
+      openActionView(effectiveOverviewProjectId, createdId);
     }
   };
 
@@ -520,8 +698,8 @@ export default function TimelinePage() {
   return (
     <DashboardShell
       roleLabel={roleLabel}
-      heading="Timeline och Gantt-planering"
-      subheading="Planera pre/build/post och underhåll i en visuell tidslinje. Alla ändringar sparas lokalt och loggas."
+      heading="Planering (Gantt)"
+      subheading="Planera pre/build/post och underhåll i en visuell projektplan. Alla ändringar sparas lokalt och loggas."
       navItems={navItems}
       cards={[]}
     >
@@ -534,7 +712,7 @@ export default function TimelinePage() {
                 setMode("overview");
                 setSelectedActionTaskId(null);
                 setSelectedTaskId(null);
-                router.replace("/timeline", { scroll: false });
+                router.push(planningBasePath, { scroll: false });
               }}
               className={`rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-wide ${
                 mode === "overview" ? "bg-[#8C7860] text-white" : "text-[#6B5A47]"
@@ -623,20 +801,6 @@ export default function TimelinePage() {
                 />
               </div>
 
-              <label className="inline-flex items-center gap-2 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
-                Zoom:
-                <select
-                  value={overviewZoom}
-                  onChange={(event) =>
-                    setOverviewZoom(event.target.value as "month" | "quarter" | "year")
-                  }
-                  className="rounded-md border border-[#D9D1C6] bg-white px-2 py-1"
-                >
-                  <option value="month">Månad</option>
-                  <option value="quarter">Kvartal</option>
-                  <option value="year">År</option>
-                </select>
-              </label>
             </>
           )}
 
@@ -659,6 +823,13 @@ export default function TimelinePage() {
               <p className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
                 Visar hela tidslinjen för valt projekt.
               </p>
+              <button
+                type="button"
+                onClick={() => router.push(planningBasePath, { scroll: false })}
+                className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]"
+              >
+                ← Till planering
+              </button>
             </>
           )}
 
@@ -683,6 +854,13 @@ export default function TimelinePage() {
                   ? `Stegplan för åtgärd: ${selectedActionTask.title}`
                   : "Välj en åtgärd i översikten."}
               </p>
+              <button
+                type="button"
+                onClick={() => router.push(planningBasePath, { scroll: false })}
+                className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]"
+              >
+                ← Till planering
+              </button>
             </>
           )}
         </section>
@@ -696,14 +874,41 @@ export default function TimelinePage() {
         {mode === "overview" && (
           <section className="space-y-4">
             {maintenanceActionRows.length > 0 && (
-              <LegacyActionTimelineGantt
-                rows={maintenanceActionRows}
-                zoom={overviewZoom}
-                startDate={actionOverviewStartDate}
-                endDate={actionOverviewEndDate}
-                onActionOpen={openActionView}
-                onProjectOpen={openProjectView}
-              />
+              <>
+                <GanttToolbar
+                  zoom={overviewZoom}
+                  showWeekends={overviewShowWeekends}
+                  groupBy={overviewGroupBy}
+                  onZoomChange={setOverviewZoom}
+                  onShowWeekendsChange={setOverviewShowWeekends}
+                  onGroupByChange={setOverviewGroupBy}
+                  onToday={() => setOverviewTodayToken((token) => token + 1)}
+                  onZoomIn={() =>
+                    setOverviewZoomFactor((current) => adjustZoomFactor(current, "in"))
+                  }
+                  onZoomOut={() =>
+                    setOverviewZoomFactor((current) => adjustZoomFactor(current, "out"))
+                  }
+                  onAddTask={onAddOverviewTask}
+                />
+                <GanttView
+                  tasks={maintenanceOverviewTasks}
+                  zoom={overviewZoom}
+                  showWeekends={overviewShowWeekends}
+                  groupBy={overviewGroupBy}
+                  zoomFactor={overviewZoomFactor}
+                  scrollToTodayToken={overviewTodayToken}
+                  scheduleStartDate={actionOverviewStartDate}
+                  scheduleEndDate={actionOverviewEndDate}
+                  editable
+                  onTaskClick={(task) => {
+                    const target = maintenanceOverviewTaskMetaById.get(task.id);
+                    if (!target) return;
+                    openActionView(target.projectId, target.actionTaskId);
+                  }}
+                  onTaskDatesChange={onOverviewTaskDatesChange}
+                />
+              </>
             )}
 
             {maintenanceActionRows.length > 0 && (
@@ -782,6 +987,13 @@ export default function TimelinePage() {
                   viewSettings: { ...schedule.viewSettings, groupBy },
                 }))
               }
+              onToday={() => setProjectTodayToken((token) => token + 1)}
+              onZoomIn={() =>
+                setProjectZoomFactor((current) => adjustZoomFactor(current, "in"))
+              }
+              onZoomOut={() =>
+                setProjectZoomFactor((current) => adjustZoomFactor(current, "out"))
+              }
               onAddTask={onAddTask}
             />
 
@@ -810,6 +1022,8 @@ export default function TimelinePage() {
               zoom={selectedSchedule.viewSettings.zoom}
               showWeekends={Boolean(selectedSchedule.viewSettings.showWeekends)}
               groupBy={selectedSchedule.viewSettings.groupBy || "phase"}
+              zoomFactor={projectZoomFactor}
+              scrollToTodayToken={projectTodayToken}
               scheduleStartDate={selectedSchedule.startDate}
               scheduleEndDate={selectedSchedule.endDate}
               editable
@@ -886,6 +1100,13 @@ export default function TimelinePage() {
                   viewSettings: { ...schedule.viewSettings, groupBy },
                 }))
               }
+              onToday={() => setActionTodayToken((token) => token + 1)}
+              onZoomIn={() =>
+                setActionZoomFactor((current) => adjustZoomFactor(current, "in"))
+              }
+              onZoomOut={() =>
+                setActionZoomFactor((current) => adjustZoomFactor(current, "out"))
+              }
               onAddTask={onAddTask}
             />
 
@@ -914,6 +1135,8 @@ export default function TimelinePage() {
               zoom={selectedSchedule.viewSettings.zoom}
               showWeekends={Boolean(selectedSchedule.viewSettings.showWeekends)}
               groupBy={selectedSchedule.viewSettings.groupBy || "phase"}
+              zoomFactor={actionZoomFactor}
+              scrollToTodayToken={actionTodayToken}
               scheduleStartDate={actionStartDate || selectedActionTask.startDate}
               scheduleEndDate={actionEndDate || selectedActionTask.endDate}
               editable

@@ -27,6 +27,10 @@ function statusLabel(status: PlatformDocument["status"]): string {
   return "Utkast";
 }
 
+async function copyRefId(refId: string) {
+  await navigator.clipboard.writeText(refId);
+}
+
 export function DocumentsInboxPanel({ audience }: { audience: "brf" | "privat" }) {
   const [requests, setRequests] = useState<PlatformRequest[]>([]);
   const [documents, setDocuments] = useState<PlatformDocument[]>([]);
@@ -102,13 +106,23 @@ export function DocumentsInboxPanel({ audience }: { audience: "brf" | "privat" }
                       <p className="text-xs text-[#6B5A47]">
                         {typeLabel(document.type)} · v{document.version} · {statusLabel(document.status)}
                       </p>
+                      <p className="font-mono text-[11px] text-[#6B5A47]">{document.refId}</p>
                     </div>
-                    <Link
-                      href={`${viewerPrefix}/${document.id}`}
-                      className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                    >
-                      Öppna
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void copyRefId(document.refId)}
+                        className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                      >
+                        Kopiera RefID
+                      </button>
+                      <Link
+                        href={`${viewerPrefix}/${document.id}`}
+                        className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                      >
+                        Öppna
+                      </Link>
+                    </div>
                   </li>
                 ))}
             </ul>

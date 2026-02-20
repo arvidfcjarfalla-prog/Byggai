@@ -327,6 +327,7 @@ export default function SammanfattningPage() {
 
     const nextRequest: PlatformRequest = {
       id: `req-${Date.now()}`,
+      refId: "",
       createdAt: new Date().toISOString(),
       audience: "privat",
       status: "sent",
@@ -352,6 +353,7 @@ export default function SammanfattningPage() {
       files,
       recipients,
       distribution: recipients.map((recipient) => toRecipientLabel(recipient)),
+      sharingApproved: false,
     };
 
     saveRequest(nextRequest);
@@ -451,10 +453,10 @@ export default function SammanfattningPage() {
                 Mina förfrågningar
               </Link>
               <Link
-                href={`/timeline?projectId=${encodeURIComponent(snapshot.id)}`}
+                href={`/dashboard/${snapshot.audience === "brf" ? "brf" : "privat"}/planering?projectId=${encodeURIComponent(snapshot.id)}`}
                 className="rounded-2xl border-2 border-[#D9D1C6] bg-white px-6 py-3 text-sm font-semibold text-[#6B5A47] outline-none transition-all hover:bg-[#FAF8F5] focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
               >
-                Open Timeline
+                Öppna planering (Gantt)
               </Link>
               <span className="inline-flex items-center rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-xs font-semibold text-[#6B5A47]">
                 Snapshot-ID: {snapshot.id}
@@ -488,9 +490,10 @@ export default function SammanfattningPage() {
 
           <div className="mt-6">
             <SchedulePreviewCard
+              key={scheduleContext.projectId}
               context={scheduleContext}
-              heading="Generated schedule preview"
-              description="Auto-fylld pre/build/post-plan som du kan redigera i Timeline."
+              heading="Tidsplansöversikt"
+              description="Auto-fylld pre/build/post-plan som du kan fortsätta arbeta med i planeringsvyn."
               maxTasks={12}
             />
           </div>

@@ -1196,10 +1196,12 @@ export default function BrfFastighetPage() {
       {tab === "timeline" && (
         <section className="space-y-4">
           <SchedulePreviewCard
+            key={timelineContext.projectId}
             context={timelineContext}
             heading="Fastighetens tidsplan"
-            description="Auto-genererad plan från underhållsdata och projektunderlag. Full redigering finns i Timeline."
+            description="Auto-genererad plan från underhållsdata och projektunderlag. Du kan dra, ändra och lägga till aktiviteter direkt här."
             maxTasks={16}
+            editable
           />
         </section>
       )}
