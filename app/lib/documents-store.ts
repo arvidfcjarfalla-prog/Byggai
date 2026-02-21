@@ -61,6 +61,37 @@ export interface DocumentAttachmentRef {
   mimeType: string;
 }
 
+export interface DocumentPromptPayload {
+  generatedAt: string;
+  selectedSectionIds: string[];
+  entrepreneurInputs: {
+    priceSummary?: string;
+    paymentPlan?: string;
+    terms?: string;
+    reservations?: string;
+  };
+  requestContext: {
+    id: string;
+    title: string;
+    audience: "brf" | "privat";
+    location: string;
+    desiredStart: string;
+    budgetRange: string;
+    scope: PlatformRequest["scope"];
+    snapshot?: PlatformRequest["snapshot"];
+    propertySnapshot?: PlatformRequest["propertySnapshot"];
+    documentSummary?: PlatformRequest["documentSummary"];
+    filesSummary: Array<{
+      id?: string;
+      name: string;
+      fileTypeLabel: string;
+      tags?: string[];
+      linkedActionTitle?: string;
+    }>;
+    derivedSummary: string;
+  };
+}
+
 export interface PlatformDocument {
   id: string;
   refId: string;
@@ -78,8 +109,10 @@ export interface PlatformDocument {
   createdByLabel: string;
   title: string;
   linkedFileIds: string[];
+  linkedRefs?: string[];
   attachments: DocumentAttachmentRef[];
   sections: DocumentSection[];
+  documentPromptPayload?: DocumentPromptPayload;
   renderedHtml?: string;
   pdfDataUrl?: string;
 }
@@ -275,6 +308,117 @@ function normalizeAttachment(raw: unknown): DocumentAttachmentRef | null {
   };
 }
 
+function normalizePromptPayload(raw: unknown): DocumentPromptPayload | undefined {
+  if (!isObject(raw) || !isObject(raw.requestContext)) return undefined;
+
+  const requestContext = raw.requestContext;
+  const generatedAt =
+    typeof raw.generatedAt === "string" && !Number.isNaN(Date.parse(raw.generatedAt))
+      ? raw.generatedAt
+      : nowIso();
+  const selectedSectionIds = Array.isArray(raw.selectedSectionIds)
+    ? raw.selectedSectionIds.filter((entry): entry is string => typeof entry === "string")
+    : [];
+
+  const entrepreneurInputs = isObject(raw.entrepreneurInputs)
+    ? {
+        priceSummary:
+          typeof raw.entrepreneurInputs.priceSummary === "string"
+            ? raw.entrepreneurInputs.priceSummary
+            : undefined,
+        paymentPlan:
+          typeof raw.entrepreneurInputs.paymentPlan === "string"
+            ? raw.entrepreneurInputs.paymentPlan
+            : undefined,
+        terms:
+          typeof raw.entrepreneurInputs.terms === "string"
+            ? raw.entrepreneurInputs.terms
+            : undefined,
+        reservations:
+          typeof raw.entrepreneurInputs.reservations === "string"
+            ? raw.entrepreneurInputs.reservations
+            : undefined,
+      }
+    : {};
+
+  const filesSummary = Array.isArray(requestContext.filesSummary)
+    ? requestContext.filesSummary
+        .map(
+          (
+            entry
+          ): DocumentPromptPayload["requestContext"]["filesSummary"][number] | null => {
+          if (!isObject(entry) || typeof entry.name !== "string") return null;
+          const normalized: DocumentPromptPayload["requestContext"]["filesSummary"][number] = {
+            name: entry.name,
+            fileTypeLabel:
+              typeof entry.fileTypeLabel === "string" ? entry.fileTypeLabel : "Okänd filtyp",
+          };
+
+          if (typeof entry.id === "string") {
+            normalized.id = entry.id;
+          }
+
+          if (Array.isArray(entry.tags)) {
+            normalized.tags = entry.tags.filter((tag): tag is string => typeof tag === "string");
+          }
+
+          if (typeof entry.linkedActionTitle === "string") {
+            normalized.linkedActionTitle = entry.linkedActionTitle;
+          }
+
+          return normalized;
+        }
+        )
+        .filter(
+          (
+            entry
+          ): entry is DocumentPromptPayload["requestContext"]["filesSummary"][number] =>
+            entry !== null
+        )
+    : [];
+
+  if (
+    typeof requestContext.id !== "string" ||
+    typeof requestContext.title !== "string" ||
+    (requestContext.audience !== "brf" && requestContext.audience !== "privat") ||
+    typeof requestContext.location !== "string" ||
+    typeof requestContext.desiredStart !== "string" ||
+    typeof requestContext.budgetRange !== "string" ||
+    !isObject(requestContext.scope)
+  ) {
+    return undefined;
+  }
+
+  return {
+    generatedAt,
+    selectedSectionIds,
+    entrepreneurInputs,
+    requestContext: {
+      id: requestContext.id,
+      title: requestContext.title,
+      audience: requestContext.audience,
+      location: requestContext.location,
+      desiredStart: requestContext.desiredStart,
+      budgetRange: requestContext.budgetRange,
+      scope: requestContext.scope as PlatformRequest["scope"],
+      snapshot: isObject(requestContext.snapshot)
+        ? (requestContext.snapshot as unknown as PlatformRequest["snapshot"])
+        : undefined,
+      propertySnapshot: isObject(requestContext.propertySnapshot)
+        ? (requestContext.propertySnapshot as unknown as PlatformRequest["propertySnapshot"])
+        : undefined,
+      documentSummary: isObject(requestContext.documentSummary)
+        ? (requestContext.documentSummary as unknown as PlatformRequest["documentSummary"])
+        : undefined,
+      filesSummary,
+      derivedSummary:
+        typeof requestContext.derivedSummary === "string"
+          ? requestContext.derivedSummary
+          : "",
+    },
+  };
+}
+
 function normalizeDocument(raw: unknown): PlatformDocument | null {
   if (!isObject(raw)) return null;
   if (typeof raw.requestId !== "string" || raw.requestId.trim().length === 0) return null;
@@ -300,6 +444,11 @@ function normalizeDocument(raw: unknown): PlatformDocument | null {
   const linkedFileIds = Array.isArray(raw.linkedFileIds)
     ? raw.linkedFileIds.filter((id): id is string => typeof id === "string")
     : attachments.map((attachment) => attachment.fileId);
+  const linkedRefs = Array.isArray(raw.linkedRefs)
+    ? raw.linkedRefs.filter((ref): ref is string => typeof ref === "string")
+    : attachments
+        .map((attachment) => attachment.fileRefId)
+        .filter((ref) => ref.trim().length > 0);
 
   // Migration note: äldre dokument saknar status-tidsfält.
   // Vi fyller minimalt från updatedAt/createdAt för att behålla historik i tidslinjen.
@@ -340,8 +489,10 @@ function normalizeDocument(raw: unknown): PlatformDocument | null {
         : "Användare",
     title: typeof raw.title === "string" && raw.title.trim().length > 0 ? raw.title : "Dokument",
     linkedFileIds,
+    linkedRefs,
     attachments,
     sections: withOrg.sections,
+    documentPromptPayload: normalizePromptPayload(raw.documentPromptPayload),
     renderedHtml: typeof raw.renderedHtml === "string" ? raw.renderedHtml : undefined,
     pdfDataUrl: typeof raw.pdfDataUrl === "string" ? raw.pdfDataUrl : undefined,
   };
@@ -944,6 +1095,7 @@ export function createDocumentFromTemplate(
     createdByLabel: createdByLabel.trim().length > 0 ? createdByLabel : "Entreprenör",
     title: `${titlePrefix} - ${request.title}`,
     linkedFileIds: [],
+    linkedRefs: [],
     attachments: [],
     sections: sectionByType,
   };

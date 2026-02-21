@@ -35,7 +35,7 @@ describe("project-files store", () => {
       senderWorkspaceId: "entreprenor",
     });
 
-    const listed = listFiles("req-1", "offert");
+    const listed = await listFiles("req-1", "offert");
     expect(listed).toHaveLength(1);
     expect(listed[0]?.filename).toBe("offert-test.pdf");
     expect(listed[0]?.refId.startsWith("FIL-")).toBe(true);
@@ -72,7 +72,7 @@ describe("project-files store", () => {
       senderLabel: "Entreprenör",
     });
 
-    const recipientFiles = listFiles("req-2", "avtal", undefined, "brf");
+    const recipientFiles = await listFiles("req-2", "avtal", undefined, "brf");
     expect(recipientFiles.length).toBeGreaterThan(0);
     const delivered = recipientFiles[0];
     expect(delivered?.recipientWorkspaceId).toBe("brf");
@@ -108,7 +108,7 @@ describe("project-files store", () => {
     expect(updated?.filename).toBe("anteckning-uppdaterad.txt");
     expect(updated?.folder).toBe("ritningar");
 
-    const listed = listFiles("req-3", undefined, "uppdaterad");
+    const listed = await listFiles("req-3", undefined, "uppdaterad");
     expect(listed).toHaveLength(1);
     expect(listed[0]?.folder).toBe("ritningar");
   });

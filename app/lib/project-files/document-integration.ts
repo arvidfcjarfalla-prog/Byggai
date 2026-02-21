@@ -1,6 +1,6 @@
 import type { PlatformDocument } from "../documents-store";
 import type { PlatformRequest } from "../requests-store";
-import { buildDocumentPdfFilename, renderDocumentToPdfBytes } from "../pdf/render-document";
+import { generateDocumentPdf } from "../pdf/generate-document-pdf";
 import type { ProjectFile, ProjectFolder, WorkspaceId } from "./types";
 import { addFile, deleteFile, listFiles, shareFileToWorkspace } from "./store";
 
@@ -25,7 +25,7 @@ export async function generateAndStoreDocumentPdf(input: {
 }): Promise<ProjectFile> {
   const folder = folderFromDocumentType(input.document.type);
 
-  const existingForSameVersion = listFiles(input.document.requestId, folder).find(
+  const existingForSameVersion = (await listFiles(input.document.requestId, folder)).find(
     (file) =>
       file.sourceId === input.document.id &&
       file.version === input.document.version &&
@@ -36,7 +36,7 @@ export async function generateAndStoreDocumentPdf(input: {
     await deleteFile(input.document.requestId, existingForSameVersion.id);
   }
 
-  const bytes = await renderDocumentToPdfBytes({
+  const generated = await generateDocumentPdf({
     document: input.document,
     request: input.request,
     generatedAtIso: input.document.updatedAt,
@@ -45,12 +45,12 @@ export async function generateAndStoreDocumentPdf(input: {
   return addFile({
     projectId: input.document.requestId,
     folder,
-    filename: buildDocumentPdfFilename(input.document, input.request),
+    filename: generated.fileName,
     mimeType: "application/pdf",
     createdBy: input.createdBy,
     sourceType: sourceTypeFromDocumentType(input.document.type),
     sourceId: input.document.id,
-    bytes,
+    bytes: generated.bytes,
     senderRole: input.senderRole,
     senderWorkspaceId: input.senderWorkspaceId,
     version: input.document.version,
@@ -64,7 +64,12 @@ export async function shareDocumentPdfToRecipient(input: {
   senderWorkspaceId: WorkspaceId;
 }): Promise<ProjectFile> {
   const folder = folderFromDocumentType(input.document.type);
-  const ownProjectFiles = listFiles(input.document.requestId, folder, undefined, input.senderWorkspaceId);
+  const ownProjectFiles = await listFiles(
+    input.document.requestId,
+    folder,
+    undefined,
+    input.senderWorkspaceId
+  );
 
   const sourceFile = ownProjectFiles.find(
     (file) =>
@@ -78,12 +83,13 @@ export async function shareDocumentPdfToRecipient(input: {
   }
 
   const recipientWorkspaceId: WorkspaceId = input.document.audience === "brf" ? "brf" : "privat";
-  const existingRecipientCopy = listFiles(
+  const recipientFiles = await listFiles(
     input.document.requestId,
     folder,
     undefined,
     recipientWorkspaceId
-  ).find(
+  );
+  const existingRecipientCopy = recipientFiles.find(
     (file) =>
       file.sourceId === input.document.id &&
       file.version === input.document.version &&

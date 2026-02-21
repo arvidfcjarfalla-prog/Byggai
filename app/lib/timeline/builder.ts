@@ -2,7 +2,6 @@ import {
   listDocumentsByRequest,
   type PlatformDocument,
 } from "../documents-store";
-import { listFiles } from "../project-files/store";
 import type { ProjectFile } from "../project-files/types";
 import {
   listRequestMessages,
@@ -38,7 +37,7 @@ export function buildProjectTimeline(input: {
       ? sources.request
       : listRequests().find((entry) => entry.id === projectId) ?? null;
   const documents = sources?.documents ?? listDocumentsByRequest(projectId);
-  const files = sources?.files ?? listFiles(projectId);
+  const files = sources?.files ?? [];
   const messages = sources?.messages ?? listRequestMessages(projectId);
 
   const requestHref = requestLink(role, projectId);

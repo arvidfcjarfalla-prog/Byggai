@@ -73,8 +73,14 @@ export default function EntreprenorPage() {
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
             </div>
-            <span className="font-display text-lg font-bold tracking-tight text-[#2A2520]">
-              Byggplattformen
+            <span className="flex flex-col items-start">
+              <span className="font-display text-lg font-bold tracking-tight text-[#2A2520]">
+                Byggplattformen
+              </span>
+              <span
+                aria-hidden="true"
+                className="mt-1 h-3.5 w-3.5 rounded-full border-2 border-[#8C7860]"
+              />
             </span>
           </Link>
 

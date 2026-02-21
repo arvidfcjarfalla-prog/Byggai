@@ -38,18 +38,29 @@ export function AttachmentPicker({
   const [sourceType, setSourceType] = useState<ProjectFile["sourceType"] | "all">("all");
 
   useEffect(() => {
-    const sync = () => {
-      const listed = listFiles(
-        projectId,
-        folder === "all" ? undefined : folder,
-        query,
-        workspaceId
-      );
-      setFiles(listed);
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const listed = await listFiles(
+          projectId,
+          folder === "all" ? undefined : folder,
+          query,
+          workspaceId
+        );
+        if (!cancelled) setFiles(listed);
+      } catch {
+        if (!cancelled) setFiles([]);
+      }
     };
 
-    sync();
-    return subscribeProjectFiles(sync);
+    void sync();
+    const unsubscribe = subscribeProjectFiles(() => {
+      void sync();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [folder, projectId, query, workspaceId]);
 
   const filtered = useMemo(

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../components/dashboard-shell";
+import { FileDeletionNotificationsWidget } from "../../components/file-deletion-notifications-widget";
 import { useAuth } from "../../components/auth-context";
 
 export default function PrivatDashboardPage() {
@@ -85,6 +86,7 @@ export default function PrivatDashboardPage() {
           ctaHref: "/dashboard/privat/forfragningar",
         },
       ]}
+      topContent={<FileDeletionNotificationsWidget workspaceId="privat" />}
     />
   );
 }

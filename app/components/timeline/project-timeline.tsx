@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { subscribeDocuments } from "../../lib/documents-store";
-import { subscribeProjectFiles } from "../../lib/project-files/store";
+import { listFiles, subscribeProjectFiles } from "../../lib/project-files/store";
+import type { ProjectFile } from "../../lib/project-files/types";
 import { subscribeRequestMessages } from "../../lib/request-messages";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../lib/requests-store";
 import { buildProjectTimeline } from "../../lib/timeline/builder";
@@ -73,6 +74,7 @@ export function ProjectTimeline({
   const [version, setVersion] = useState(0);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjectId ?? "");
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>("alla");
+  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
 
   useEffect(() => {
     const bump = () => setVersion((current) => current + 1);
@@ -110,6 +112,31 @@ export function ProjectTimeline({
     [effectiveProjectId, requests]
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    const syncFiles = async () => {
+      if (!effectiveProjectId) {
+        if (!cancelled) setProjectFiles([]);
+        return;
+      }
+      try {
+        const files = await listFiles(effectiveProjectId);
+        if (!cancelled) {
+          setProjectFiles(files);
+        }
+      } catch {
+        if (!cancelled) {
+          setProjectFiles([]);
+        }
+      }
+    };
+
+    void syncFiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveProjectId, version]);
+
   const timeline = useMemo(
     () => {
       const marker = version;
@@ -118,10 +145,13 @@ export function ProjectTimeline({
         ? buildProjectTimeline({
             projectId: effectiveProjectId,
             role,
+            sources: {
+              files: projectFiles,
+            },
           })
         : null;
     },
-    [effectiveProjectId, role, version]
+    [effectiveProjectId, projectFiles, role, version]
   );
 
   const visibleEvents = useMemo(() => {

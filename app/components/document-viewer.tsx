@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PlatformDocument } from "../lib/documents-store";
 import type { PlatformRequest } from "../lib/requests-store";
 import { renderDocumentToHtml } from "../lib/document-renderer";
-import { getFile } from "../lib/project-files/store";
+import { getFile, listFiles, subscribeProjectFiles } from "../lib/project-files/store";
+import type { ProjectFile } from "../lib/project-files/types";
 
 function typeLabel(type: PlatformDocument["type"]): string {
   if (type === "quote") return "Offert";
@@ -40,6 +41,44 @@ export function DocumentViewer({
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const previewHtml = useMemo(() => renderDocumentToHtml(document, request), [document, request]);
+  const [pdfFile, setPdfFile] = useState<ProjectFile | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPdfCandidate = async () => {
+      try {
+        const candidates = (await listFiles(document.requestId)).filter(
+          (file) =>
+            file.sourceId === document.id &&
+            file.version === document.version &&
+            file.mimeType === "application/pdf"
+        );
+        const preferredRecipient = document.audience === "brf" ? "brf" : "privat";
+        const next =
+          candidates.find((file) => file.recipientWorkspaceId === preferredRecipient) ??
+          candidates.find((file) => !file.recipientWorkspaceId) ??
+          candidates[0] ??
+          null;
+        if (!cancelled) {
+          setPdfFile(next);
+        }
+      } catch {
+        if (!cancelled) {
+          setPdfFile(null);
+        }
+      }
+    };
+
+    void loadPdfCandidate();
+    const unsubscribe = subscribeProjectFiles(() => {
+      void loadPdfCandidate();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [document.audience, document.id, document.requestId, document.version]);
+
   const linkedFiles =
     document.attachments.length > 0
       ? document.attachments
@@ -88,7 +127,41 @@ export function DocumentViewer({
       </div>
 
       <div className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
-        <h3 className="text-base font-bold text-[#2A2520]">Bilagor</h3>
+        <h3 className="text-base font-bold text-[#2A2520]">Relaterade filer</h3>
+        {pdfFile && (
+          <div className="mt-2 rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#6B5A47]">
+              Dokument-PDF
+            </p>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm text-[#2A2520]">{pdfFile.filename}</p>
+                <p className="font-mono text-[11px] text-[#6B5A47]">{pdfFile.refId}</p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const loaded = await getFile(document.requestId, pdfFile.id);
+                  if (!loaded || !loaded.bytes) {
+                    setNotice("Kunde inte öppna PDF. Filens innehåll saknas.");
+                    return;
+                  }
+                  const blob = new Blob([blobPartFromBytes(loaded.bytes)], {
+                    type: "application/pdf",
+                  });
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, "_blank", "noopener,noreferrer");
+                  window.setTimeout(() => URL.revokeObjectURL(url), 15_000);
+                  setNotice(null);
+                }}
+                className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+              >
+                Öppna PDF
+              </button>
+            </div>
+          </div>
+        )}
+
         {linkedFiles.length === 0 ? (
           <p className="mt-2 text-sm text-[#766B60]">Inga bilagor kopplade.</p>
         ) : (

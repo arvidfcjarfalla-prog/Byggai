@@ -116,6 +116,10 @@ export default function EntreprenorDokumentPage() {
             <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
               <h3 className="text-lg font-bold text-[#2A2520]">Dokument för vald förfrågan</h3>
               <p className="mt-1 text-sm text-[#766B60]">{selectedRequest.title} · {selectedRequest.location}</p>
+              <p className="text-xs text-[#8C7860]">
+                Request: {selectedRequest.id} · Skapad{" "}
+                {new Date(selectedRequest.createdAt).toLocaleDateString("sv-SE")}
+              </p>
               {documents.length === 0 ? (
                 <p className="mt-3 text-sm text-[#766B60]">Inga dokument skapade ännu.</p>
               ) : (

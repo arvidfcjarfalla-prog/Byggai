@@ -41,6 +41,7 @@ export function DashboardShell({
   // Deprecated: kept for backwards compatibility while pages are migrated.
   navItems,
   children,
+  topContent,
   contextHeader,
 }: {
   roleLabel: string;
@@ -51,6 +52,7 @@ export function DashboardShell({
   startProjectLabel?: string;
   navItems?: DashboardNavItem[];
   children?: React.ReactNode;
+  topContent?: React.ReactNode;
   contextHeader?: {
     projectName: string;
     roleLabel?: string;
@@ -174,6 +176,8 @@ export function DashboardShell({
               </div>
             )}
           </header>
+
+          {topContent && <div className="mb-6">{topContent}</div>}
 
           {children ? (
             children

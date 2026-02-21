@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../components/dashboard-shell";
+import { FileDeletionNotificationsWidget } from "../../components/file-deletion-notifications-widget";
 import { useAuth } from "../../components/auth-context";
 
 export default function BrfDashboardPage() {
@@ -91,6 +92,7 @@ export default function BrfDashboardPage() {
           ctaHref: "/dashboard/brf/forfragningar",
         },
       ]}
+      topContent={<FileDeletionNotificationsWidget workspaceId="brf" />}
     />
   );
 }

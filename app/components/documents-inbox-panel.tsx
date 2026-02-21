@@ -95,6 +95,13 @@ export function DocumentsInboxPanel({ audience }: { audience: "brf" | "privat" }
             <p className="mt-1 text-xs text-[#766B60]">
               {request?.location ?? "Okand plats"} · Request ID: {requestId}
             </p>
+            <p className="text-xs text-[#8C7860]">
+              Skapad:{" "}
+              {request?.createdAt
+                ? new Date(request.createdAt).toLocaleDateString("sv-SE")
+                : "okänt datum"}{" "}
+              · Dokument: {docs.length}
+            </p>
             <ul className="mt-3 space-y-2">
               {docs
                 .slice()

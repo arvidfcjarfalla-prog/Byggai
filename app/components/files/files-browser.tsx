@@ -7,6 +7,8 @@ import {
   findEntityByRefId,
   getFile,
   listFiles,
+  persistFileDeletionInBackend,
+  persistFileMetadataUpdateInBackend,
   shareFileToWorkspace,
   subscribeProjectFiles,
   updateFileMetadata,
@@ -104,22 +106,33 @@ export function FilesBrowser({
   }, [projectId, workspaceId]);
 
   useEffect(() => {
-    const sync = () => {
+    let cancelled = false;
+    const sync = async () => {
       if (!projectId) {
-        setFiles([]);
+        if (!cancelled) setFiles([]);
         return;
       }
-      const listed = listFiles(
-        projectId,
-        folder === "all" ? undefined : folder,
-        query,
-        workspaceId
-      );
-      setFiles(listed);
+      try {
+        const listed = await listFiles(
+          projectId,
+          folder === "all" ? undefined : folder,
+          query,
+          workspaceId
+        );
+        if (!cancelled) setFiles(listed);
+      } catch {
+        if (!cancelled) setNotice("Kunde inte läsa filer från backend just nu.");
+      }
     };
 
-    sync();
-    return subscribeProjectFiles(sync);
+    void sync();
+    const unsubscribe = subscribeProjectFiles(() => {
+      void sync();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [folder, projectId, query, workspaceId]);
 
   const activeProject = useMemo(
@@ -184,10 +197,12 @@ export function FilesBrowser({
     setEditFolder("ovrigt");
   };
 
-  const handleSaveEdit = (file: ProjectFile) => {
+  const handleSaveEdit = async (file: ProjectFile) => {
     if (!projectId) return;
     setBusyFileId(file.id);
     try {
+      const previousFilename = file.filename;
+      const previousFolder = file.folder;
       const updated = updateFileMetadata({
         projectId,
         fileId: file.id,
@@ -198,7 +213,25 @@ export function FilesBrowser({
         setNotice("Kunde inte uppdatera filen.");
         return;
       }
-      setNotice("Filen uppdaterades.");
+
+      try {
+        await persistFileMetadataUpdateInBackend({
+          projectId,
+          fileId: file.id,
+          fileRefId: file.refId,
+          actorRole,
+          actorLabel,
+          previousFilename,
+          nextFilename: updated.filename,
+          previousFolder,
+          nextFolder: updated.folder,
+        });
+        setNotice("Filen uppdaterades.");
+      } catch (error) {
+        const fallback = "Filen uppdaterades lokalt men kunde inte sparas i backend.";
+        setNotice(error instanceof Error && error.message ? error.message : fallback);
+      }
+
       cancelEdit();
     } catch (error) {
       const fallback = "Kunde inte uppdatera filen.";
@@ -218,9 +251,10 @@ export function FilesBrowser({
     try {
       const idsToDelete = new Set<string>([file.id]);
       const shouldNotify = workspaceId === "entreprenor" && isDocumentFile(file) && !file.recipientWorkspaceId;
+      const notifyWorkspaces = shouldNotify ? (["brf", "privat"] as const) : [];
 
       if (shouldNotify) {
-        const relatedCopies = listFiles(projectId).filter(
+        const relatedCopies = (await listFiles(projectId)).filter(
           (entry) =>
             entry.id !== file.id &&
             entry.sourceId === file.sourceId &&
@@ -230,9 +264,23 @@ export function FilesBrowser({
         relatedCopies.forEach((entry) => idsToDelete.add(entry.id));
       }
 
+      const persisted = await persistFileDeletionInBackend({
+        projectId,
+        fileId: file.id,
+        fileRefId: file.refId,
+        filename: file.filename,
+        actorRole,
+        actorLabel,
+        notifyWorkspaces: [...notifyWorkspaces],
+      });
+
       let deletedCount = 0;
       for (const id of idsToDelete) {
-        const deleted = await deleteFile(projectId, id);
+        const deleted = await deleteFile(
+          projectId,
+          id,
+          id === file.id ? { skipBackend: true } : undefined
+        );
         if (deleted) deletedCount += 1;
       }
 
@@ -258,7 +306,9 @@ export function FilesBrowser({
 
       setNotice(
         shouldNotify
-          ? "Dokumentet togs bort. BRF och privatperson har fått en notis."
+          ? persisted.notificationsCreated > 0
+            ? "Dokumentet togs bort. BRF och privatperson har fått en notis."
+            : "Dokumentet togs bort."
           : "Filen togs bort."
       );
     } catch (error) {
@@ -414,7 +464,7 @@ export function FilesBrowser({
                       <>
                         <button
                           type="button"
-                          onClick={() => handleSaveEdit(file)}
+                          onClick={() => void handleSaveEdit(file)}
                           disabled={busyFileId === file.id}
                           className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                         >
@@ -491,7 +541,7 @@ export function FilesBrowser({
                   </select>
                   <button
                     type="button"
-                    onClick={() => handleSaveEdit(file)}
+                    onClick={() => void handleSaveEdit(file)}
                     disabled={busyFileId === file.id}
                     className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                   >

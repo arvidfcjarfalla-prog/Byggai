@@ -24,6 +24,9 @@ export interface RequestMessage {
   authorLabel: string;
   body: string;
   messageType: RequestMessageType;
+  relatedDocumentId?: string;
+  relatedDocumentRefId?: string;
+  relatedFileId?: string;
   createdAt: string;
   attachments: RequestMessageAttachment[];
 }
@@ -42,6 +45,9 @@ export interface SendRequestMessageInput {
   authorLabel: string;
   body: string;
   messageType: RequestMessageType;
+  relatedDocumentId?: string;
+  relatedDocumentRefId?: string;
+  relatedFileId?: string;
   attachments?: RequestMessageAttachment[];
   targetRoles?: ConversationActorRole[];
 }
@@ -123,6 +129,11 @@ function normalizeMessage(raw: unknown, requestId: string): RequestMessage | nul
         : "Användare",
     body,
     messageType: toMessageType(raw.messageType),
+    relatedDocumentId:
+      typeof raw.relatedDocumentId === "string" ? raw.relatedDocumentId : undefined,
+    relatedDocumentRefId:
+      typeof raw.relatedDocumentRefId === "string" ? raw.relatedDocumentRefId : undefined,
+    relatedFileId: typeof raw.relatedFileId === "string" ? raw.relatedFileId : undefined,
     createdAt:
       typeof raw.createdAt === "string" && !Number.isNaN(Date.parse(raw.createdAt))
         ? raw.createdAt
@@ -271,6 +282,11 @@ export function sendRequestMessage(input: SendRequestMessageInput): RequestMessa
     authorLabel: input.authorLabel.trim() || "Användare",
     body,
     messageType: input.messageType,
+    relatedDocumentId:
+      typeof input.relatedDocumentId === "string" ? input.relatedDocumentId : undefined,
+    relatedDocumentRefId:
+      typeof input.relatedDocumentRefId === "string" ? input.relatedDocumentRefId : undefined,
+    relatedFileId: typeof input.relatedFileId === "string" ? input.relatedFileId : undefined,
     createdAt,
     attachments,
   };

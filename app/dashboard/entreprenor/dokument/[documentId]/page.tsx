@@ -34,6 +34,17 @@ function statusLabel(status: PlatformDocument["status"]): string {
   return "Utkast";
 }
 
+function hasFieldValue(value: DocumentField["value"]): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) && value !== 0;
+  return String(value ?? "").trim().length > 0;
+}
+
+function sameStringArray(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((entry, index) => entry === right[index]);
+}
+
 export default function EntreprenorDocumentEditorPage() {
   const params = useParams<{ documentId: string }>();
   const router = useRouter();
@@ -45,6 +56,8 @@ export default function EntreprenorDocumentEditorPage() {
   const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
+  const [expandedItemKeys, setExpandedItemKeys] = useState<string[]>([]);
 
   useEffect(() => {
     if (!ready) return;
@@ -79,18 +92,32 @@ export default function EntreprenorDocumentEditorPage() {
   }, [documentId]);
 
   useEffect(() => {
-    const sync = () => {
+    let cancelled = false;
+    const sync = async () => {
       if (!document?.requestId) {
-        setProjectFiles([]);
+        if (!cancelled) setProjectFiles([]);
         return;
       }
-      setProjectFiles(
-        listFiles(document.requestId, undefined, undefined, "entreprenor")
-      );
+      try {
+        const files = await listFiles(document.requestId, undefined, undefined, "entreprenor");
+        if (!cancelled) {
+          setProjectFiles(files);
+        }
+      } catch {
+        if (!cancelled) {
+          setProjectFiles([]);
+        }
+      }
     };
 
-    sync();
-    return subscribeProjectFiles(sync);
+    void sync();
+    const unsubscribe = subscribeProjectFiles(() => {
+      void sync();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [document?.requestId]);
 
   useEffect(() => {
@@ -115,6 +142,20 @@ export default function EntreprenorDocumentEditorPage() {
       attachments: nextAttachments,
     });
   }, [document, projectFiles]);
+
+  const sectionIds = useMemo(
+    () => (document ? document.sections.map((section) => section.id) : []),
+    [document]
+  );
+
+  useEffect(() => {
+    if (!document?.id) return;
+    setExpandedSectionIds((current) => {
+      const existing = current.filter((id) => sectionIds.includes(id));
+      const next = existing.length > 0 ? existing : sectionIds.slice(0, 2);
+      return sameStringArray(current, next) ? current : next;
+    });
+  }, [document?.id, sectionIds]);
 
   const previewHtml = useMemo(() => {
     if (!document) return "";
@@ -167,6 +208,22 @@ export default function EntreprenorDocumentEditorPage() {
         ),
       };
     });
+  };
+
+  const toggleSectionExpanded = (sectionId: string) => {
+    setExpandedSectionIds((current) =>
+      current.includes(sectionId)
+        ? current.filter((id) => id !== sectionId)
+        : [...current, sectionId]
+    );
+  };
+
+  const expandAllSections = () => {
+    setExpandedSectionIds(document.sections.map((section) => section.id));
+  };
+
+  const collapseAllSections = () => {
+    setExpandedSectionIds([]);
   };
 
   const setLinkedFile = (file: ProjectFile, enabled: boolean) => {
@@ -229,6 +286,13 @@ export default function EntreprenorDocumentEditorPage() {
         }),
       };
     });
+  };
+
+  const toggleItemExpanded = (sectionId: string, itemId: string) => {
+    const key = `${sectionId}:${itemId}`;
+    setExpandedItemKeys((current) =>
+      current.includes(key) ? current.filter((entry) => entry !== key) : [...current, key]
+    );
   };
 
   const persist = async (nextStatus?: PlatformDocument["status"]) => {
@@ -342,7 +406,7 @@ export default function EntreprenorDocumentEditorPage() {
       cards={[]}
     >
       <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
-        <aside className="space-y-4 rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
+        <aside className="max-h-[80vh] space-y-4 overflow-y-auto rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
           <div>
             <label className="block text-xs font-semibold text-[#6B5A47]">Dokumenttitel</label>
             <input
@@ -373,40 +437,89 @@ export default function EntreprenorDocumentEditorPage() {
             {projectFiles.length === 0 ? (
               <p className="mt-2 text-xs text-[#766B60]">Inga bilagor kopplade till förfrågan.</p>
             ) : (
-              <ul className="mt-2 space-y-1">
-                {projectFiles.map((file) => {
-                  const checked = document.linkedFileIds.includes(file.id);
-                  return (
-                    <li key={file.id}>
-                      <label className="flex items-center gap-2 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1.5 text-xs text-[#2A2520]">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => setLinkedFile(file, event.target.checked)}
-                        />
-                        <span className="min-w-0 flex-1 truncate">{file.filename}</span>
-                        <span className="font-mono text-[10px] text-[#6B5A47]">{file.refId}</span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
+              <details className="mt-2 overflow-hidden rounded-xl border border-[#E8E3DC] bg-white">
+                <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-[#6B5A47]">
+                  Bilagor ({document.linkedFileIds.length} av {projectFiles.length} valda)
+                </summary>
+                <ul className="max-h-56 space-y-1 overflow-y-auto border-t border-[#E8E3DC] p-2">
+                  {projectFiles.map((file) => {
+                    const checked = document.linkedFileIds.includes(file.id);
+                    return (
+                      <li key={file.id}>
+                        <label className="flex items-center gap-2 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1.5 text-xs text-[#2A2520]">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => setLinkedFile(file, event.target.checked)}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{file.filename}</span>
+                          <span className="font-mono text-[10px] text-[#6B5A47]">{file.refId}</span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
             )}
           </div>
 
           <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[#6B5A47]">
+                Sektioner ({document.sections.length})
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={expandAllSections}
+                  className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                >
+                  Expandera alla
+                </button>
+                <button
+                  type="button"
+                  onClick={collapseAllSections}
+                  className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                >
+                  Fäll ihop
+                </button>
+              </div>
+            </div>
             {document.sections.map((section) => (
               <article key={section.id} className="rounded-2xl border border-[#E8E3DC] bg-[#FCFBF8] p-3">
-                <label className="mb-2 flex items-center justify-between gap-2 text-sm font-semibold text-[#2A2520]">
-                  <span>{section.title}</span>
-                  <input
-                    type="checkbox"
-                    checked={section.enabled}
-                    onChange={(event) => setSectionEnabled(section.id, event.target.checked)}
-                  />
-                </label>
+                {(() => {
+                  const isExpanded = expandedSectionIds.includes(section.id);
+                  const filledFieldCount = section.fields.filter((field) => hasFieldValue(field.value)).length;
+                  const itemCount = section.items?.length ?? 0;
 
-                <div className="space-y-2">
+                  return (
+                    <>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleSectionExpanded(section.id)}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1.5 text-left text-sm font-semibold text-[#2A2520] hover:bg-[#F6F0E8]"
+                        >
+                          <span className="truncate">{section.title}</span>
+                          <span className="text-xs text-[#6B5A47]">{isExpanded ? "▲" : "▼"}</span>
+                        </button>
+                        <label className="flex shrink-0 items-center gap-1 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47]">
+                          Aktiv
+                          <input
+                            type="checkbox"
+                            checked={section.enabled}
+                            onChange={(event) => setSectionEnabled(section.id, event.target.checked)}
+                          />
+                        </label>
+                      </div>
+
+                      {!isExpanded ? (
+                        <p className="text-[11px] text-[#766B60]">
+                          {filledFieldCount}/{section.fields.length} fält ifyllda
+                          {itemCount > 0 ? ` · ${itemCount} rader` : ""}
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
                   {section.fields.map((field) => (
                     <div key={field.id}>
                       <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B5A47]">
@@ -459,59 +572,83 @@ export default function EntreprenorDocumentEditorPage() {
 
                   {(section.items ?? []).map((item) => (
                     <div key={item.id} className="rounded-lg border border-[#E8E3DC] bg-white p-2">
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-[#6B5A47]">Rad</p>
-                      <input
-                        value={item.label}
-                        onChange={(event) => setItemValue(section.id, item.id, "label", event.target.value)}
-                        className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                        placeholder="Rubrik"
-                      />
-                      <input
-                        value={item.description ?? ""}
-                        onChange={(event) =>
-                          setItemValue(section.id, item.id, "description", event.target.value)
-                        }
-                        className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                        placeholder="Källa/ref"
-                      />
-                      <div className="mb-1 grid grid-cols-3 gap-1">
-                        <input
-                          value={item.quantity ?? ""}
-                          onChange={(event) =>
-                            setItemValue(section.id, item.id, "quantity", event.target.value)
-                          }
-                          className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                          placeholder="Antal"
-                          inputMode="decimal"
-                        />
-                        <input
-                          value={item.unitPrice ?? ""}
-                          onChange={(event) =>
-                            setItemValue(section.id, item.id, "unitPrice", event.target.value)
-                          }
-                          className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                          placeholder="A-pris"
-                          inputMode="decimal"
-                        />
-                        <input
-                          value={item.total ?? ""}
-                          onChange={(event) =>
-                            setItemValue(section.id, item.id, "total", event.target.value)
-                          }
-                          className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                          placeholder="Summa"
-                          inputMode="decimal"
-                        />
-                      </div>
-                      <input
-                        value={item.value ?? ""}
-                        onChange={(event) => setItemValue(section.id, item.id, "value", event.target.value)}
-                        className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
-                        placeholder="Notering/kommentar"
-                      />
+                      {(() => {
+                        const itemKey = `${section.id}:${item.id}`;
+                        const itemExpanded = expandedItemKeys.includes(itemKey);
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => toggleItemExpanded(section.id, item.id)}
+                              className="mb-1 flex w-full items-center justify-between rounded-md border border-[#E8E3DC] bg-[#FAF8F5] px-2 py-1 text-left text-[11px] font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                            >
+                              <span className="truncate">{item.label || "Rad"}</span>
+                              <span>{itemExpanded ? "▲" : "▼"}</span>
+                            </button>
+
+                            {itemExpanded && (
+                              <>
+                                <input
+                                  value={item.label}
+                                  onChange={(event) => setItemValue(section.id, item.id, "label", event.target.value)}
+                                  className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                                  placeholder="Rubrik"
+                                />
+                                <input
+                                  value={item.description ?? ""}
+                                  onChange={(event) =>
+                                    setItemValue(section.id, item.id, "description", event.target.value)
+                                  }
+                                  className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                                  placeholder="Källa/ref"
+                                />
+                                <div className="mb-1 grid grid-cols-3 gap-1">
+                                  <input
+                                    value={item.quantity ?? ""}
+                                    onChange={(event) =>
+                                      setItemValue(section.id, item.id, "quantity", event.target.value)
+                                    }
+                                    className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                                    placeholder="Antal"
+                                    inputMode="decimal"
+                                  />
+                                  <input
+                                    value={item.unitPrice ?? ""}
+                                    onChange={(event) =>
+                                      setItemValue(section.id, item.id, "unitPrice", event.target.value)
+                                    }
+                                    className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                                    placeholder="A-pris"
+                                    inputMode="decimal"
+                                  />
+                                  <input
+                                    value={item.total ?? ""}
+                                    onChange={(event) =>
+                                      setItemValue(section.id, item.id, "total", event.target.value)
+                                    }
+                                    className="w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                                    placeholder="Summa"
+                                    inputMode="decimal"
+                                  />
+                                </div>
+                                <input
+                                  value={item.value ?? ""}
+                                  onChange={(event) => setItemValue(section.id, item.id, "value", event.target.value)}
+                                  className="mb-1 w-full rounded-md border border-[#D9D1C6] px-2 py-1 text-xs"
+                                  placeholder="Notering/kommentar"
+                                />
+                              </>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   ))}
-                </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </article>
             ))}
           </div>
