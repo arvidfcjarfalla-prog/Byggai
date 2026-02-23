@@ -7,6 +7,12 @@ import { useAuth } from "../../../components/auth-context";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../lib/requests-store";
 import {
+  ensureDraftOfferForRequest,
+  listLatestOffersByProject,
+  subscribeOffers,
+} from "../../../lib/offers/store";
+import type { Offer } from "../../../lib/offers/types";
+import {
   formatSnapshotBudget,
   formatSnapshotTimeline,
   toSwedishRiskLabel,
@@ -43,6 +49,25 @@ function recipientStatusLabel(status: string): string {
   return "Skickad";
 }
 
+function offerStatusLabel(status: Offer["status"]): string {
+  if (status === "sent") return "Skickad";
+  if (status === "accepted") return "Accepterad";
+  if (status === "rejected") return "Avslagen";
+  return "Utkast";
+}
+
+function getCurrentContractorOffer(offers: Offer[], userId?: string, userEmail?: string): Offer | null {
+  const normalizedUserId = userId?.trim();
+  const normalizedUserEmail = userEmail?.trim().toLowerCase();
+  return (
+    offers.find((offer) => {
+      if (normalizedUserId && offer.contractorId === normalizedUserId) return true;
+      if (normalizedUserEmail && offer.contractorId.toLowerCase() === normalizedUserEmail) return true;
+      return false;
+    }) ?? null
+  );
+}
+
 export default function EntreprenorForfragningarPage() {
   const router = useRouter();
   const { user, ready } = useAuth();
@@ -50,6 +75,7 @@ export default function EntreprenorForfragningarPage() {
     () => listRequests()
   );
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [, setOffersRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
@@ -69,6 +95,12 @@ export default function EntreprenorForfragningarPage() {
   useEffect(() => {
     return subscribeRequests(() => {
       setIncomingRequests(listRequests());
+    });
+  }, []);
+
+  useEffect(() => {
+    return subscribeOffers(() => {
+      setOffersRefreshKey((current) => current + 1);
     });
   }, []);
 
@@ -95,6 +127,10 @@ export default function EntreprenorForfragningarPage() {
     incomingRequests.find((request) => request.id === resolvedSelectedRequestId) ||
     incomingRequests[0] ||
     null;
+  const projectOffers = selectedRequest ? listLatestOffersByProject(selectedRequest.id) : [];
+  const currentContractorOffer = selectedRequest
+    ? getCurrentContractorOffer(projectOffers, user.id, user.email)
+    : null;
 
   return (
     <DashboardShell
@@ -123,6 +159,9 @@ export default function EntreprenorForfragningarPage() {
         <section className="grid gap-6 xl:grid-cols-[360px_1fr]">
           <aside className="rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
             <h2 className="mb-3 text-lg font-bold text-[#2A2520]">Inkorg</h2>
+            <p className="mb-3 text-xs text-[#6B5A47]">
+              Klicka på en förfrågan för att öppna analyssidan och generera offertunderlag.
+            </p>
             <div className="space-y-2">
               {incomingRequests.map((request) => {
                 const active = request.id === resolvedSelectedRequestId;
@@ -131,7 +170,10 @@ export default function EntreprenorForfragningarPage() {
                   <button
                     key={request.id}
                     type="button"
-                    onClick={() => setSelectedRequestId(request.id)}
+                    onClick={() => {
+                      setSelectedRequestId(request.id);
+                      router.push(`/dashboard/entreprenor/forfragningar/request/${request.id}`);
+                    }}
                     className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                       active
                         ? "border-[#8C7860] bg-[#F6F0E8]"
@@ -196,6 +238,120 @@ export default function EntreprenorForfragningarPage() {
                   </div>
                 ))}
               </div>
+            </article>
+
+            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold text-[#2A2520]">Offertarbete & intern analys</h3>
+                  <p className="mt-1 text-sm text-[#6B5A47]">
+                    Skapa eller öppna ditt offertutkast för strukturerad analys, export och kvalitetssäkring före skick.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!selectedRequest) return;
+                    const contractorId = user.id || user.email;
+                    if (!contractorId) return;
+                    const offer = ensureDraftOfferForRequest({
+                      request: selectedRequest,
+                      contractorId,
+                    });
+                    router.push(`/dashboard/entreprenor/forfragningar/${offer.id}/analysis`);
+                  }}
+                  className="rounded-xl bg-[#2F2F31] px-4 py-2 text-sm font-semibold text-white hover:bg-[#19191A]"
+                >
+                  {currentContractorOffer ? "Öppna min offertanalys" : "Skapa offertutkast"}
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                    Projektets offerter
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-[#2A2520]">{projectOffers.length}</p>
+                  <p className="text-xs text-[#6B5A47]">Senaste version per entreprenör</p>
+                </div>
+                <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                    Min offertstatus
+                  </p>
+                  <p className="mt-1 text-base font-bold text-[#2A2520]">
+                    {currentContractorOffer
+                      ? `${offerStatusLabel(currentContractorOffer.status)} · v${currentContractorOffer.version}`
+                      : "Ingen offert ännu"}
+                  </p>
+                  {currentContractorOffer && (
+                    <p className="mt-1 text-xs text-[#6B5A47]">
+                      {formatSek(currentContractorOffer.totals.exVat)} ex moms
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-xl border border-[#E8E3DC] bg-[#FAF8F5] px-3 py-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-[#8C7860]">
+                    Benchmark
+                  </p>
+                  <p className="mt-1 text-base font-bold text-[#2A2520]">
+                    {projectOffers.length > 1 ? "Jämförelse tillgänglig" : "Väntar på fler offerter"}
+                  </p>
+                  <p className="mt-1 text-xs text-[#6B5A47]">
+                    Kundvyn visar jämförelse automatiskt när minst två finns.
+                  </p>
+                </div>
+              </div>
+
+              {projectOffers.length > 0 && (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-[#E8E3DC] text-left text-xs uppercase tracking-wider text-[#8C7860]">
+                        <th className="px-2 py-2">Entreprenör</th>
+                        <th className="px-2 py-2">Status</th>
+                        <th className="px-2 py-2">Version</th>
+                        <th className="px-2 py-2">Ex moms</th>
+                        <th className="px-2 py-2">Åtgärd</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projectOffers.map((offer) => {
+                        const isCurrent =
+                          (user.id && offer.contractorId === user.id) ||
+                          (user.email && offer.contractorId.toLowerCase() === user.email.toLowerCase());
+                        return (
+                          <tr
+                            key={offer.id}
+                            className={`border-b border-[#EFE8DD] ${isCurrent ? "bg-[#FFF9F1]" : ""}`}
+                          >
+                            <td className="px-2 py-2 font-semibold text-[#2A2520]">
+                              {offer.contractorId}
+                              {isCurrent && (
+                                <span className="ml-2 rounded-full border border-[#D7C3A8] bg-[#FFF4DE] px-2 py-0.5 text-[11px] font-semibold text-[#6B5A47]">
+                                  Min
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2 py-2 text-[#6B5A47]">{offerStatusLabel(offer.status)}</td>
+                            <td className="px-2 py-2 text-[#6B5A47]">v{offer.version}</td>
+                            <td className="px-2 py-2 font-semibold text-[#2A2520]">
+                              {formatSek(offer.totals.exVat)}
+                            </td>
+                            <td className="px-2 py-2">
+                              <Link
+                                href={`/dashboard/entreprenor/forfragningar/${offer.id}/analysis`}
+                                className="inline-flex rounded-lg border border-[#D2C5B5] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                              >
+                                Öppna analys
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </article>
 
             <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
@@ -395,6 +551,12 @@ export default function EntreprenorForfragningarPage() {
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  href={`/dashboard/entreprenor/forfragningar/request/${selectedRequest.id}`}
+                  className="inline-flex rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                >
+                  Öppna analyssida
+                </Link>
                 <Link
                   href={`/dashboard/entreprenor/meddelanden?requestId=${selectedRequest.id}`}
                   className="inline-flex rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]"

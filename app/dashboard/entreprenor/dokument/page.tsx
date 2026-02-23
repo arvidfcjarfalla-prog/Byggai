@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../../components/auth-context";
 import { DashboardShell } from "../../../components/dashboard-shell";
+import { EntreprenorOfferFlowShell } from "../../../components/offers/EntreprenorOfferFlowShell";
 import { RequestConversationsSidebar } from "../../../components/request-conversations-sidebar";
 import { RequestDocumentGeneratorPanel } from "../../../components/request-document-generator-panel";
 import {
@@ -12,6 +13,12 @@ import {
   subscribeDocuments,
   type PlatformDocument,
 } from "../../../lib/documents-store";
+import {
+  buildEntreprenorOfferFlowSteps,
+  getLatestQuoteDocumentForRequest,
+} from "../../../lib/offers/flow";
+import { listLatestOffersByProject, subscribeOffers } from "../../../lib/offers/store";
+import type { Offer } from "../../../lib/offers/types";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../lib/requests-store";
 
 function documentTypeLabel(type: PlatformDocument["type"]): string {
@@ -32,6 +39,18 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
+function getContractorOfferForUser(offers: Offer[], userId?: string, userEmail?: string): Offer | null {
+  const normalizedUserId = userId?.trim();
+  const normalizedUserEmail = userEmail?.trim().toLowerCase();
+  return (
+    offers.find((offer) => {
+      if (normalizedUserId && offer.contractorId === normalizedUserId) return true;
+      if (normalizedUserEmail && offer.contractorId.toLowerCase() === normalizedUserEmail) return true;
+      return false;
+    }) ?? null
+  );
+}
+
 export default function EntreprenorDokumentPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -40,6 +59,7 @@ export default function EntreprenorDokumentPage() {
   const [incomingRequests, setIncomingRequests] = useState<PlatformRequest[]>(() => listRequests());
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(initialRequestId);
   const [version, setVersion] = useState(0);
+  const [offersVersion, setOffersVersion] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
@@ -58,6 +78,7 @@ export default function EntreprenorDokumentPage() {
 
   useEffect(() => subscribeRequests(() => setIncomingRequests(listRequests())), []);
   useEffect(() => subscribeDocuments(() => setVersion((current) => current + 1)), []);
+  useEffect(() => subscribeOffers(() => setOffersVersion((current) => current + 1)), []);
 
   const resolvedSelectedRequestId =
     selectedRequestId && incomingRequests.some((request) => request.id === selectedRequestId)
@@ -77,6 +98,30 @@ export default function EntreprenorDokumentPage() {
     if (!selectedRequest) return [];
     return listDocumentsByRequest(selectedRequest.id);
   }, [selectedRequest, version]);
+  const projectOffers = useMemo(() => {
+    const marker = offersVersion;
+    void marker;
+    if (!selectedRequest) return [];
+    return listLatestOffersByProject(selectedRequest.id);
+  }, [offersVersion, selectedRequest]);
+  const currentContractorOffer = useMemo(
+    () => getContractorOfferForUser(projectOffers, user?.id, user?.email),
+    [projectOffers, user?.email, user?.id]
+  );
+  const latestQuoteDocument = useMemo(() => getLatestQuoteDocumentForRequest(documents), [documents]);
+  const flowSteps = useMemo(
+    () =>
+      selectedRequest
+        ? buildEntreprenorOfferFlowSteps({
+            activeStepId: "generate",
+            requestId: selectedRequest.id,
+            offerId: currentContractorOffer?.id ?? null,
+            generateDocumentId: latestQuoteDocument?.id ?? null,
+            previewDocumentId: latestQuoteDocument?.id ?? null,
+          })
+        : [],
+    [currentContractorOffer?.id, latestQuoteDocument?.id, selectedRequest]
+  );
 
   if (!ready || !user) return null;
 
@@ -103,17 +148,21 @@ export default function EntreprenorDokumentPage() {
       )}
 
       {selectedRequest && (
-        <section className="grid gap-6 xl:grid-cols-[320px_1fr]">
-          <RequestConversationsSidebar
-            requests={incomingRequests}
-            selectedRequestId={resolvedSelectedRequestId}
-            actorRole="entreprenor"
-            title="Förfrågningar"
-            onSelectRequest={setSelectedRequestId}
-          />
+        <EntreprenorOfferFlowShell
+          steps={flowSteps}
+          stepperSubheading="Steg 3 bygger själva offertdokumentet. Skapa ett utkast och gå vidare till live preview innan skick."
+        >
+          <section className="grid gap-6 xl:grid-cols-[320px_1fr]">
+            <RequestConversationsSidebar
+              requests={incomingRequests}
+              selectedRequestId={resolvedSelectedRequestId}
+              actorRole="entreprenor"
+              title="Förfrågningar"
+              onSelectRequest={setSelectedRequestId}
+            />
 
-          <main className="space-y-6">
-            <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+            <main className="space-y-6">
+              <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
               <h3 className="text-lg font-bold text-[#2A2520]">Dokument för vald förfrågan</h3>
               <p className="mt-1 text-sm text-[#766B60]">{selectedRequest.title} · {selectedRequest.location}</p>
               <p className="text-xs text-[#8C7860]">
@@ -154,11 +203,12 @@ export default function EntreprenorDokumentPage() {
                   ))}
                 </ul>
               )}
-            </section>
+              </section>
 
-            <RequestDocumentGeneratorPanel request={selectedRequest} actorLabel={actorLabel} />
-          </main>
-        </section>
+              <RequestDocumentGeneratorPanel request={selectedRequest} actorLabel={actorLabel} />
+            </main>
+          </section>
+        </EntreprenorOfferFlowShell>
       )}
     </DashboardShell>
   );

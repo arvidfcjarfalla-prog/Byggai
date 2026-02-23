@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   createDocumentFromTemplate,
   saveDocument,
@@ -115,6 +116,7 @@ export function RequestDocumentGeneratorPanel({
   actorLabel,
   onDocumentSent,
 }: RequestDocumentGeneratorPanelProps) {
+  const router = useRouter();
   const [kind, setKind] = useState<DocumentType>("quote");
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
@@ -138,82 +140,89 @@ export function RequestDocumentGeneratorPanel({
   );
 
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingMode, setIsCreatingMode] = useState<"draft" | "send" | null>(null);
 
   useEffect(() => {
     setSelectedSectionIds(sectionDefaults);
   }, [sectionDefaults]);
 
-  const handleCreate = async () => {
-    setIsCreating(true);
-    setNotice(null);
-    setError(null);
-    try {
-      const projectFiles = await listFiles(request.id, undefined, undefined, "entreprenor");
-      const byId = new Map(projectFiles.map((file) => [file.id, file]));
-      const attachments: DocumentAttachmentRef[] = selectedFileIds
-        .map((fileId) => byId.get(fileId))
-        .filter((file): file is (typeof projectFiles)[number] => Boolean(file))
-        .map((file) => ({
-          fileId: file.id,
-          fileRefId: file.refId,
-          filename: file.filename,
-          folder: file.folder,
-          mimeType: file.mimeType,
-        }));
+  const resetForm = () => {
+    setSelectedSectionIds(sectionDefaults);
+    setPriceSummary("");
+    setPaymentPlan("");
+    setTerms("");
+    setReservations("");
+    setSelectedFileIds([]);
+  };
 
-      const selectedSectionsSet = new Set(selectedSectionIds);
-      const sectionsWithSelection = draftTemplate.sections.map((section) => ({
-        ...section,
-        enabled: selectedSectionsSet.has(section.id),
+  const buildDraftPayload = async () => {
+    const projectFiles = await listFiles(request.id, undefined, undefined, "entreprenor");
+    const byId = new Map(projectFiles.map((file) => [file.id, file]));
+    const attachments: DocumentAttachmentRef[] = selectedFileIds
+      .map((fileId) => byId.get(fileId))
+      .filter((file): file is (typeof projectFiles)[number] => Boolean(file))
+      .map((file) => ({
+        fileId: file.id,
+        fileRefId: file.refId,
+        filename: file.filename,
+        folder: file.folder,
+        mimeType: file.mimeType,
       }));
 
-      const sectionsWithInputs = sectionsWithSelection.map((section) => {
-        let fields = section.fields;
-        if (priceSummary.trim().length > 0) {
-          fields = applyFieldOverride(fields, "total-price", priceSummary.trim());
-          fields = applyFieldOverride(fields, "compensation", priceSummary.trim());
-          fields = applyFieldOverride(fields, "price-total", priceSummary.trim());
-        }
-        if (terms.trim().length > 0) {
-          fields = applyFieldOverride(fields, "terms", terms.trim());
-          fields = applyFieldOverride(fields, "extra-agreements", terms.trim());
-        }
-        if (reservations.trim().length > 0) {
-          fields = applyFieldOverride(fields, "reservation-text", reservations.trim());
-          fields = applyFieldOverride(fields, "price-comment", reservations.trim());
-        }
-        if (
-          paymentPlan.trim().length > 0 &&
-          (section.id === "pricing" || section.id === "payment" || section.id === "kov-pricing")
-        ) {
-          fields = upsertField(fields, {
-            id: "payment-plan-custom",
-            label: "Betalningsplan",
-            type: "textarea",
-            value: paymentPlan.trim(),
-          });
-        }
+    const selectedSectionsSet = new Set(selectedSectionIds);
+    const sectionsWithSelection = draftTemplate.sections.map((section) => ({
+      ...section,
+      enabled: selectedSectionsSet.has(section.id),
+    }));
 
-        return {
-          ...section,
-          fields,
-        };
-      });
+    const sectionsWithInputs = sectionsWithSelection.map((section) => {
+      let fields = section.fields;
+      if (priceSummary.trim().length > 0) {
+        fields = applyFieldOverride(fields, "total-price", priceSummary.trim());
+        fields = applyFieldOverride(fields, "compensation", priceSummary.trim());
+        fields = applyFieldOverride(fields, "price-total", priceSummary.trim());
+      }
+      if (terms.trim().length > 0) {
+        fields = applyFieldOverride(fields, "terms", terms.trim());
+        fields = applyFieldOverride(fields, "extra-agreements", terms.trim());
+      }
+      if (reservations.trim().length > 0) {
+        fields = applyFieldOverride(fields, "reservation-text", reservations.trim());
+        fields = applyFieldOverride(fields, "price-comment", reservations.trim());
+      }
+      if (
+        paymentPlan.trim().length > 0 &&
+        (section.id === "pricing" || section.id === "payment" || section.id === "kov-pricing")
+      ) {
+        fields = upsertField(fields, {
+          id: "payment-plan-custom",
+          label: "Betalningsplan",
+          type: "textarea",
+          value: paymentPlan.trim(),
+        });
+      }
 
-      const promptPayload = toPromptPayload({
-        request,
-        selectedSectionIds,
-        entrepreneurInputs: {
-          priceSummary,
-          paymentPlan,
-          terms,
-          reservations,
-        },
-      });
+      return {
+        ...section,
+        fields,
+      };
+    });
 
-      const next = {
+    const promptPayload = toPromptPayload({
+      request,
+      selectedSectionIds,
+      entrepreneurInputs: {
+        priceSummary,
+        paymentPlan,
+        terms,
+        reservations,
+      },
+    });
+
+    return {
+      attachments,
+      nextDocument: {
         ...draftTemplate,
-        status: "sent" as const,
         linkedFileIds: selectedFileIds,
         linkedRefs: attachments
           .map((entry) => entry.fileRefId)
@@ -221,6 +230,43 @@ export function RequestDocumentGeneratorPanel({
         attachments,
         sections: sectionsWithInputs,
         documentPromptPayload: promptPayload,
+      },
+    };
+  };
+
+  const handleCreateDraft = async () => {
+    setIsCreating(true);
+    setIsCreatingMode("draft");
+    setNotice(null);
+    setError(null);
+    try {
+      const { nextDocument } = await buildDraftPayload();
+      const draft = {
+        ...nextDocument,
+        status: "draft" as const,
+      };
+      const savedDraft = saveDocument(draft).find((entry) => entry.id === draft.id) ?? draft;
+      setNotice(`${typeLabel(kind)}-utkast skapat. Öppnar live preview.`);
+      router.push(`/dashboard/entreprenor/dokument/${savedDraft.id}`);
+    } catch (error) {
+      const fallback = "Kunde inte skapa dokumentutkast.";
+      setError(error instanceof Error && error.message ? error.message : fallback);
+    } finally {
+      setIsCreating(false);
+      setIsCreatingMode(null);
+    }
+  };
+
+  const handleCreateAndSend = async () => {
+    setIsCreating(true);
+    setIsCreatingMode("send");
+    setNotice(null);
+    setError(null);
+    try {
+      const { nextDocument } = await buildDraftPayload();
+      const next = {
+        ...nextDocument,
+        status: "sent" as const,
       };
 
       const savedInitial = saveDocument(next).find((entry) => entry.id === next.id) ?? next;
@@ -285,25 +331,21 @@ export function RequestDocumentGeneratorPanel({
 
       setNotice(`${typeLabel(kind)} skickad. PDF och relaterade filer är kopplade till projektet.`);
       onDocumentSent?.();
-      setSelectedSectionIds(sectionDefaults);
-      setPriceSummary("");
-      setPaymentPlan("");
-      setTerms("");
-      setReservations("");
-      setSelectedFileIds([]);
+      resetForm();
     } catch (error) {
       const fallback = "Kunde inte skapa och skicka dokumentet.";
       setError(error instanceof Error && error.message ? error.message : fallback);
     } finally {
       setIsCreating(false);
+      setIsCreatingMode(null);
     }
   };
 
   return (
     <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
-      <h3 className="text-lg font-bold text-[#2A2520]">Skapa och skicka projektbundet dokument</h3>
+      <h3 className="text-lg font-bold text-[#2A2520]">Skapa projektbundet dokument</h3>
       <p className="mt-1 text-sm text-[#766B60]">
-        Dokument sparas per förfrågan, får PDF i projektets filer och skickas till mottagarens dokumentinkorg.
+        Skapa först ett utkast och granska live preview innan du skickar. Dokumentet är kopplat till vald förfrågan.
       </p>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
@@ -411,14 +453,24 @@ export function RequestDocumentGeneratorPanel({
             workspaceId="entreprenor"
           />
 
-          <button
-            type="button"
-            onClick={handleCreate}
-            disabled={isCreating}
-            className="w-full rounded-xl bg-[#8C7860] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#6B5A47]"
-          >
-            {isCreating ? "Genererar..." : "Generera och skicka"}
-          </button>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={handleCreateDraft}
+              disabled={isCreating}
+              className="w-full rounded-xl bg-[#2F2F31] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#19191A] disabled:opacity-60"
+            >
+              {isCreating && isCreatingMode === "draft" ? "Skapar..." : "Skapa utkast & öppna preview"}
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateAndSend}
+              disabled={isCreating}
+              className="w-full rounded-xl border border-[#D2C5B5] bg-white px-5 py-2.5 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8] disabled:opacity-60"
+            >
+              {isCreating && isCreatingMode === "send" ? "Skickar..." : "Generera och skicka direkt"}
+            </button>
+          </div>
         </div>
 
         <article className="rounded-2xl border border-[#E8E3DC] bg-[#FCFBF8] p-3">

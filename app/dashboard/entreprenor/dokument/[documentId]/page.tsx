@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { useAuth } from "../../../../components/auth-context";
+import { EntreprenorOfferFlowShell } from "../../../../components/offers/EntreprenorOfferFlowShell";
 import {
   createNextVersion,
   getDocumentById,
@@ -12,6 +13,9 @@ import {
   type DocumentField,
   type PlatformDocument,
 } from "../../../../lib/documents-store";
+import { buildEntreprenorOfferFlowSteps } from "../../../../lib/offers/flow";
+import { listLatestOffersByProject, subscribeOffers } from "../../../../lib/offers/store";
+import type { Offer } from "../../../../lib/offers/types";
 import { renderDocumentToHtml } from "../../../../lib/document-renderer";
 import {
   generateAndStoreDocumentPdf,
@@ -45,6 +49,18 @@ function sameStringArray(left: string[], right: string[]): boolean {
   return left.every((entry, index) => entry === right[index]);
 }
 
+function getContractorOfferForUser(offers: Offer[], userId?: string, userEmail?: string): Offer | null {
+  const normalizedUserId = userId?.trim();
+  const normalizedUserEmail = userEmail?.trim().toLowerCase();
+  return (
+    offers.find((offer) => {
+      if (normalizedUserId && offer.contractorId === normalizedUserId) return true;
+      if (normalizedUserEmail && offer.contractorId.toLowerCase() === normalizedUserEmail) return true;
+      return false;
+    }) ?? null
+  );
+}
+
 export default function EntreprenorDocumentEditorPage() {
   const params = useParams<{ documentId: string }>();
   const router = useRouter();
@@ -58,6 +74,7 @@ export default function EntreprenorDocumentEditorPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const [expandedItemKeys, setExpandedItemKeys] = useState<string[]>([]);
+  const [offersVersion, setOffersVersion] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
@@ -120,6 +137,8 @@ export default function EntreprenorDocumentEditorPage() {
     };
   }, [document?.requestId]);
 
+  useEffect(() => subscribeOffers(() => setOffersVersion((current) => current + 1)), []);
+
   useEffect(() => {
     if (!document || projectFiles.length === 0) return;
     if (document.attachments.length >= document.linkedFileIds.length) return;
@@ -161,6 +180,25 @@ export default function EntreprenorDocumentEditorPage() {
     if (!document) return "";
     return renderDocumentToHtml(document, request);
   }, [document, request]);
+  const projectOffers = useMemo(() => {
+    const marker = offersVersion;
+    void marker;
+    if (!document) return [];
+    return listLatestOffersByProject(document.requestId);
+  }, [document, offersVersion]);
+  const currentContractorOffer = useMemo(
+    () => getContractorOfferForUser(projectOffers, user?.id, user?.email),
+    [projectOffers, user?.email, user?.id]
+  );
+  const flowSteps = useMemo(() => {
+    if (!document || document.type !== "quote") return [];
+    return buildEntreprenorOfferFlowSteps({
+      activeStepId: "preview",
+      requestId: document.requestId,
+      offerId: currentContractorOffer?.id ?? null,
+      previewDocumentId: document.id,
+    });
+  }, [currentContractorOffer?.id, document]);
 
   if (!ready || !user) return null;
 
@@ -405,7 +443,11 @@ export default function EntreprenorDocumentEditorPage() {
       ]}
       cards={[]}
     >
-      <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
+      <EntreprenorOfferFlowShell
+        steps={flowSteps}
+        stepperSubheading="Steg 4 är live preview och slutlig kvalitetssäkring innan du skickar PDF till kunden."
+      >
+        <section className="grid gap-6 xl:grid-cols-[420px_1fr]">
         <aside className="max-h-[80vh] space-y-4 overflow-y-auto rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
           <div>
             <label className="block text-xs font-semibold text-[#6B5A47]">Dokumenttitel</label>
@@ -687,7 +729,10 @@ export default function EntreprenorDocumentEditorPage() {
           )}
         </aside>
 
-        <article className="rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
+        <article
+          id="live-preview"
+          className="rounded-3xl border border-[#E6DFD6] bg-white p-4 shadow-sm"
+        >
           <h3 className="text-lg font-bold text-[#2A2520]">Live preview</h3>
           <p className="mt-1 text-sm text-[#766B60]">Förhandsvisning av aktiverade sektioner (print-ready).</p>
           <div className="mt-3 h-[80vh] overflow-hidden rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5]">
@@ -698,7 +743,8 @@ export default function EntreprenorDocumentEditorPage() {
             />
           </div>
         </article>
-      </section>
+        </section>
+      </EntreprenorOfferFlowShell>
     </DashboardShell>
   );
 }
