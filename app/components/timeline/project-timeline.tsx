@@ -7,6 +7,7 @@ import { listFiles, subscribeProjectFiles } from "../../lib/project-files/store"
 import type { ProjectFile } from "../../lib/project-files/types";
 import { subscribeRequestMessages } from "../../lib/request-messages";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../lib/requests-store";
+import { routes } from "../../lib/routes";
 import { buildProjectTimeline } from "../../lib/timeline/builder";
 import type { TimelineEventFilter, TimelineRole } from "../../lib/timeline/types";
 
@@ -48,7 +49,7 @@ function roleMatchesRequest(role: TimelineRole, request: PlatformRequest): boole
 function emptyStateAction(role: TimelineRole): { href: string; label: string } {
   if (role === "entreprenor") {
     return {
-      href: "/dashboard/entreprenor/forfragningar",
+      href: routes.entreprenor.requestsIndex(),
       label: "Gå till förfrågningar",
     };
   }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
 import { FilesBrowser } from "../../../components/files/files-browser";
+import { routes } from "../../../lib/routes";
 
 export default function PrivatFilerPage() {
   const router = useRouter();
@@ -17,11 +18,11 @@ export default function PrivatFilerPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -34,11 +35,11 @@ export default function PrivatFilerPage() {
       subheading="Alla projektfiler, inklusive mottagna PDF:er för offert, avtal och ÄTA."
       cards={[]}
       navItems={[
-        { href: "/dashboard/privat", label: "Översikt" },
-        { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
-        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/privat/dokumentinkorg", label: "Dokumentinkorg" },
-        { href: "/dashboard/privat/filer", label: "Filer" },
+        { href: routes.privatperson.overview(), label: "Översikt" },
+        { href: routes.privatperson.underlagIndex(), label: "Bostad & underlag" },
+        { href: routes.privatperson.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.privatperson.documentsIndex(), label: "Dokumentinkorg" },
+        { href: routes.privatperson.filesIndex(), label: "Filer" },
       ]}
     >
       <FilesBrowser

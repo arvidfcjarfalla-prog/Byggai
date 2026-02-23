@@ -12,6 +12,7 @@ import {
   subscribeRequests,
   type PlatformRequest,
 } from "../lib/requests-store";
+import { routes } from "../lib/routes";
 
 function typeLabel(type: PlatformDocument["type"]): string {
   if (type === "quote") return "Offert";
@@ -88,7 +89,6 @@ export function DocumentsInboxPanel({ audience }: { audience: "brf" | "privat" }
     <section className="space-y-4">
       {grouped.map(([requestId, docs]) => {
         const request = requestById.get(requestId);
-        const viewerPrefix = audience === "brf" ? "/dashboard/brf/dokument" : "/dashboard/privat/dokument";
         return (
           <article key={requestId} className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
             <h3 className="text-base font-bold text-[#2A2520]">{request?.title ?? "Projektförfrågan"}</h3>
@@ -124,7 +124,11 @@ export function DocumentsInboxPanel({ audience }: { audience: "brf" | "privat" }
                         Kopiera RefID
                       </button>
                       <Link
-                        href={`${viewerPrefix}/${document.id}`}
+                        href={
+                          audience === "brf"
+                            ? routes.brf.documentDetail({ documentId: document.id, requestId })
+                            : routes.privatperson.documentDetail({ documentId: document.id, requestId })
+                        }
                         className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                       >
                         Öppna

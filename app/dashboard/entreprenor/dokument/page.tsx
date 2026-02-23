@@ -20,6 +20,7 @@ import {
 import { listLatestOffersByProject, subscribeOffers } from "../../../lib/offers/store";
 import type { Offer } from "../../../lib/offers/types";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../lib/requests-store";
+import { routes } from "../../../lib/routes";
 
 function documentTypeLabel(type: PlatformDocument["type"]): string {
   if (type === "quote") return "Offert";
@@ -68,11 +69,11 @@ export default function EntreprenorDokumentPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -130,14 +131,14 @@ export default function EntreprenorDokumentPage() {
       roleLabel="Entreprenör"
       heading="Dokument"
       subheading="Skapa och hantera offert, avtal och ÄTA som projektbundna dokumentobjekt."
-      startProjectHref="/dashboard/entreprenor/forfragningar"
+      startProjectHref={routes.entreprenor.requestsIndex()}
       startProjectLabel="Se förfrågningar"
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
-        { href: "/dashboard/entreprenor/filer", label: "Filer" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
+        { href: routes.entreprenor.filesIndex(), label: "Filer" },
       ]}
       cards={[]}
     >
@@ -192,7 +193,10 @@ export default function EntreprenorDokumentPage() {
                             Kopiera RefID
                           </button>
                           <Link
-                            href={`/dashboard/entreprenor/dokument/${document.id}`}
+                            href={routes.entreprenor.documentDetail({
+                              documentId: document.id,
+                              requestId: selectedRequest.id,
+                            })}
                             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                           >
                             Öppna editor

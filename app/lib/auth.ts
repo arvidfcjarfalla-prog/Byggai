@@ -1,3 +1,5 @@
+import { routes } from "./routes";
+
 export type UserRole = "privat" | "brf" | "entreprenor" | "osaker";
 
 export interface StoredUser {
@@ -21,9 +23,9 @@ export function getSessionStorageKey() {
 }
 
 export function getDashboardPath(role: UserRole): string {
-  if (role === "brf") return "/dashboard/brf";
-  if (role === "entreprenor") return "/dashboard/entreprenor";
-  return "/dashboard/privat";
+  if (role === "brf") return routes.brf.overview();
+  if (role === "entreprenor") return routes.entreprenor.overview();
+  return routes.privatperson.overview();
 }
 
 export function getLandingPath(role: UserRole): string {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
 import { DocumentsInboxPanel } from "../../../components/documents-inbox-panel";
+import { routes } from "../../../lib/routes";
 
 export default function PrivatDokumentPage() {
   const router = useRouter();
@@ -17,11 +18,11 @@ export default function PrivatDokumentPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 

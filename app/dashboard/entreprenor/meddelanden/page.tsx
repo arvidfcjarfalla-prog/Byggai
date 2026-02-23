@@ -12,6 +12,7 @@ import {
   subscribeRequests,
   type PlatformRequest,
 } from "../../../lib/requests-store";
+import { routes } from "../../../lib/routes";
 
 function requestStatusLabel(status: PlatformRequest["status"]): string {
   if (status === "received") return "Svar inkommen";
@@ -36,11 +37,11 @@ export default function EntreprenorMeddelandenPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -99,13 +100,13 @@ export default function EntreprenorMeddelandenPage() {
       roleLabel="Entreprenör"
       heading="Meddelanden"
       subheading="Inkorg till vänster och aktiv chatt till höger."
-      startProjectHref="/dashboard/entreprenor/forfragningar"
+      startProjectHref={routes.entreprenor.requestsIndex()}
       startProjectLabel="Se förfrågningar"
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
       ]}
       cards={[]}
     >

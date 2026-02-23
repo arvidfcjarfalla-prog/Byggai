@@ -1,4 +1,5 @@
 import type { PlatformDocument } from "../documents-store";
+import { routes } from "../routes";
 
 export type EntreprenorOfferFlowStepId = "request" | "analysis" | "generate" | "preview";
 export type EntreprenorOfferFlowStepState = "current" | "complete" | "available" | "locked";
@@ -49,15 +50,21 @@ export function buildEntreprenorOfferFlowSteps(input: {
   generateDocumentId?: string | null;
   previewDocumentId?: string | null;
 }): EntreprenorOfferFlowStep[] {
-  const requestHref = `/dashboard/entreprenor/forfragningar/request/${encodeURIComponent(input.requestId)}`;
+  const requestHref = routes.entreprenor.requestDetail({ requestId: input.requestId });
   const analysisHref = input.offerId
-    ? `/dashboard/entreprenor/forfragningar/${encodeURIComponent(input.offerId)}/analysis`
+    ? routes.entreprenor.offerAnalysis({ offerId: input.offerId })
     : undefined;
   const generateHref = input.generateDocumentId
-    ? `/dashboard/entreprenor/dokument/${encodeURIComponent(input.generateDocumentId)}`
-    : `/dashboard/entreprenor/dokument?requestId=${encodeURIComponent(input.requestId)}`;
+    ? routes.entreprenor.documentDetail({
+        documentId: input.generateDocumentId,
+        requestId: input.requestId,
+      })
+    : routes.entreprenor.documentsIndex({ requestId: input.requestId });
   const previewHref = input.previewDocumentId
-    ? `/dashboard/entreprenor/dokument/${encodeURIComponent(input.previewDocumentId)}`
+    ? routes.entreprenor.documentDetail({
+        documentId: input.previewDocumentId,
+        requestId: input.requestId,
+      })
     : undefined;
 
   const order: EntreprenorOfferFlowStepId[] = ["request", "analysis", "generate", "preview"];

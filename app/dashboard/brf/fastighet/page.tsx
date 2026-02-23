@@ -53,6 +53,7 @@ import {
   type ProjectSnapshot,
 } from "../../../lib/project-snapshot";
 import type { ScheduleProjectContext } from "../../../lib/schedule";
+import { routes } from "../../../lib/routes";
 
 type PropertyTab = "overview" | "components" | "files" | "timeline";
 
@@ -243,10 +244,10 @@ export default function BrfFastighetPage() {
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
       return;
     }
-    if (user.role === "entreprenor") router.replace("/dashboard/entreprenor");
+    if (user.role === "entreprenor") router.replace(routes.entreprenor.overview());
   }, [ready, router, user]);
 
   useEffect(() => {
@@ -519,15 +520,15 @@ export default function BrfFastighetPage() {
       roleLabel="Bostadsrättsförening"
       heading={`Fastighet: ${profile.propertyName || "Ej namnsatt"}`}
       subheading="Samlad fastighetsyta för upphandling: strukturera fakta, komponenter och dokument så entreprenörer får rätt underlag från start."
-      startProjectHref="/dashboard/brf/underhallsplan"
+      startProjectHref={routes.brf.maintenanceIndex()}
       startProjectLabel="Underhållsplan"
       navItems={[
-        { href: "/dashboard/brf", label: "Översikt" },
-        { href: "/dashboard/brf/fastighet", label: "Fastighet" },
-        { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
+        { href: routes.brf.overview(), label: "Översikt" },
+        { href: routes.brf.propertyIndex(), label: "Fastighet" },
+        { href: routes.brf.maintenanceIndex(), label: "Underhållsplan" },
         { href: "/timeline", label: "Timeline" },
-        { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/brf/dokumentinkorg", label: "Avtalsinkorg" },
+        { href: routes.brf.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.brf.documentsIndex(), label: "Avtalsinkorg" },
         { href: "/brf/start", label: "Initiera BRF-projekt" },
       ]}
       cards={[]}

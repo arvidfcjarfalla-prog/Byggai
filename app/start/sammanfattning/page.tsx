@@ -34,6 +34,7 @@ import {
   writeProjectSnapshotToStorage,
 } from "../../lib/project-snapshot";
 import type { ScheduleProjectContext } from "../../lib/schedule";
+import { routes } from "../../lib/routes";
 
 const RISK_COLORS: Record<ProjectSnapshot["riskProfile"]["level"], string> = {
   low: "border-emerald-200 bg-emerald-50/80 text-emerald-800",
@@ -223,7 +224,8 @@ export default function SammanfattningPage() {
       : data.userRole === "entreprenor"
         ? "/entreprenor"
         : "/privatperson";
-  const requestsHref = snapshot.audience === "brf" ? "/dashboard/brf/forfragningar" : "/dashboard/privat/forfragningar";
+  const requestsHref =
+    snapshot.audience === "brf" ? routes.brf.requestsIndex() : routes.privatperson.requestsIndex();
 
   const typeCrumb: Crumb | null =
     data.projectType && data.projectType !== "annat"

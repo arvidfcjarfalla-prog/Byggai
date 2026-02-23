@@ -23,6 +23,7 @@ import {
   type ScheduleZoom,
   type ScheduleTask,
 } from "../lib/schedule";
+import { routes } from "../lib/routes";
 
 type TimelineMode = "overview" | "project" | "action";
 type CategoryFilter = "all" | "pre" | "build" | "post" | "maintenance";
@@ -30,19 +31,19 @@ type CategoryFilter = "all" | "pre" | "build" | "post" | "maintenance";
 function navForRole(role: "brf" | "privat") {
   if (role === "brf") {
     return [
-      { href: "/dashboard/brf", label: "Översikt" },
-      { href: "/dashboard/brf/fastighet", label: "Fastighet" },
-      { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
-      { href: "/dashboard/brf/planering", label: "Planering (Gantt)" },
-      { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
+      { href: routes.brf.overview(), label: "Översikt" },
+      { href: routes.brf.propertyIndex(), label: "Fastighet" },
+      { href: routes.brf.maintenanceIndex(), label: "Underhållsplan" },
+      { href: routes.brf.planningIndex(), label: "Planering (Gantt)" },
+      { href: routes.brf.requestsIndex(), label: "Mina förfrågningar" },
       { href: "/brf/start", label: "Initiera BRF-projekt" },
     ];
   }
   return [
-    { href: "/dashboard/privat", label: "Översikt" },
-    { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
-    { href: "/dashboard/privat/planering", label: "Planering (Gantt)" },
-    { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
+    { href: routes.privatperson.overview(), label: "Översikt" },
+    { href: routes.privatperson.underlagIndex(), label: "Bostad & underlag" },
+    { href: routes.privatperson.planningIndex(), label: "Planering (Gantt)" },
+    { href: routes.privatperson.requestsIndex(), label: "Mina förfrågningar" },
     { href: "/start", label: "Initiera / fortsätt projekt" },
   ];
 }
@@ -101,7 +102,7 @@ export default function TimelinePage() {
   const { user, ready } = useAuth();
   const audienceFilter = user?.role === "brf" ? "brf" : "privat";
   const planningBasePath =
-    user?.role === "brf" ? "/dashboard/brf/planering" : "/dashboard/privat/planering";
+    user?.role === "brf" ? routes.brf.planningIndex() : routes.privatperson.planningIndex();
   const [mode, setMode] = useState<TimelineMode>(
     initialActionTaskId ? "action" : initialProjectId ? "project" : "overview"
   );
@@ -134,7 +135,7 @@ export default function TimelinePage() {
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 

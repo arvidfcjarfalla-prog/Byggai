@@ -12,6 +12,7 @@ import { OfferTopDrivers } from "../../../../components/offers/OfferTopDrivers";
 import { OfferTypeChart } from "../../../../components/offers/OfferTypeChart";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { useAuth } from "../../../../components/auth-context";
+import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
 import {
   analyzeOfferForCustomer,
   simulateOfferScenario,
@@ -25,6 +26,7 @@ import {
 } from "../../../../lib/offers/store";
 import type { Offer } from "../../../../lib/offers/types";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../lib/requests-store";
+import { routes } from "../../../../lib/routes";
 
 function parseAreaM2(request: PlatformRequest | null): number | undefined {
   const raw = request?.propertySnapshot?.areaSummary;
@@ -67,11 +69,11 @@ export default function PrivatOfferDetailsPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -138,7 +140,7 @@ export default function PrivatOfferDetailsPage() {
         <section className="rounded-2xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
           <p className="text-sm text-[#6B5A47]">Ingen offert hittades för ID: {offerId}</p>
           <Link
-            href="/dashboard/privat/forfragningar"
+            href={routes.privatperson.requestsIndex()}
             className="mt-3 inline-flex rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Tillbaka till förfrågningar
@@ -149,6 +151,7 @@ export default function PrivatOfferDetailsPage() {
   }
 
   const canCompare = projectOffers.length > 1;
+  const requestsIndexHref = routes.privatperson.requestsIndex({ requestId: request?.id ?? offer.projectId });
 
   return (
     <DashboardShell
@@ -162,17 +165,32 @@ export default function PrivatOfferDetailsPage() {
         statusLabel: `${statusLabel(offer.status)} · v${offer.version}`,
       }}
     >
+      <section className="mb-4 rounded-2xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
+        <Breadcrumbs
+          items={[
+            { href: requestsIndexHref, label: "Förfrågningar" },
+            { label: request?.title ?? `Offert ${offer.version}` },
+          ]}
+        />
+        <Link
+          href={requestsIndexHref}
+          className="inline-flex rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+        >
+          Till förfrågningsöversikt
+        </Link>
+      </section>
+
       <section className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/privat/forfragningar"
+            href={requestsIndexHref}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Tillbaka
           </Link>
           {request && (
             <Link
-              href={`/dashboard/privat/tidslinje?projectId=${encodeURIComponent(request.id)}`}
+              href={routes.privatperson.timelineIndex({ projectId: request.id })}
               className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
             >
               Projektets tidslinje

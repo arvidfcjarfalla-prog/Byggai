@@ -17,6 +17,7 @@ import {
 import { listFiles } from "../lib/project-files/store";
 import type { PlatformRequest } from "../lib/requests-store";
 import { sendRequestMessage } from "../lib/request-messages";
+import { routes } from "../lib/routes";
 import { AttachmentPicker } from "./attachments/attachment-picker";
 
 interface RequestDocumentGeneratorPanelProps {
@@ -247,7 +248,9 @@ export function RequestDocumentGeneratorPanel({
       };
       const savedDraft = saveDocument(draft).find((entry) => entry.id === draft.id) ?? draft;
       setNotice(`${typeLabel(kind)}-utkast skapat. Öppnar live preview.`);
-      router.push(`/dashboard/entreprenor/dokument/${savedDraft.id}`);
+      router.push(
+        routes.entreprenor.documentDetail({ documentId: savedDraft.id, requestId: request.id })
+      );
     } catch (error) {
       const fallback = "Kunde inte skapa dokumentutkast.";
       setError(error instanceof Error && error.message ? error.message : fallback);

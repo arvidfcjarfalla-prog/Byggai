@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
 import { ProjectTimeline } from "../../../components/timeline/project-timeline";
+import { routes } from "../../../lib/routes";
 
 export default function EntreprenorTidslinjePage() {
   const router = useRouter();
@@ -19,11 +20,11 @@ export default function EntreprenorTidslinjePage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -46,14 +47,14 @@ export default function EntreprenorTidslinjePage() {
       roleLabel="Entreprenör"
       heading="Tidslinje"
       subheading="Följ projektets läge från förfrågan till avtal, arbete och avslut med en gemensam, spårbar statuskedja."
-      startProjectHref="/dashboard/entreprenor/forfragningar"
+      startProjectHref={routes.entreprenor.requestsIndex()}
       startProjectLabel="Se förfrågningar"
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
-        { href: "/dashboard/entreprenor/filer", label: "Filer" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
+        { href: routes.entreprenor.filesIndex(), label: "Filer" },
       ]}
       cards={[]}
     >

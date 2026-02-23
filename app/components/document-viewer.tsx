@@ -7,6 +7,7 @@ import type { PlatformRequest } from "../lib/requests-store";
 import { renderDocumentToHtml } from "../lib/document-renderer";
 import { getFile, listFiles, subscribeProjectFiles } from "../lib/project-files/store";
 import type { ProjectFile } from "../lib/project-files/types";
+import { Breadcrumbs, type Crumb } from "./ui/breadcrumbs";
 
 function typeLabel(type: PlatformDocument["type"]): string {
   if (type === "quote") return "Offert";
@@ -33,11 +34,13 @@ export function DocumentViewer({
   request,
   backHref,
   backLabel,
+  breadcrumbs,
 }: {
   document: PlatformDocument;
   request: PlatformRequest | null;
   backHref: string;
   backLabel: string;
+  breadcrumbs?: Crumb[];
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const previewHtml = useMemo(() => renderDocumentToHtml(document, request), [document, request]);
@@ -92,6 +95,8 @@ export function DocumentViewer({
 
   return (
     <section className="space-y-6">
+      {breadcrumbs && breadcrumbs.length > 0 && <Breadcrumbs items={breadcrumbs} />}
+
       <div className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

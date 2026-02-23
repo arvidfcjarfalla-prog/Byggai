@@ -43,6 +43,7 @@ import {
   type ProjectSnapshot,
 } from "../../../lib/project-snapshot";
 import type { ScheduleProjectContext } from "../../../lib/schedule";
+import { routes } from "../../../lib/routes";
 
 type PrivateTab = "home" | "project" | "files" | "timeline";
 
@@ -154,11 +155,11 @@ export default function PrivatUnderlagPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -385,11 +386,11 @@ export default function PrivatUnderlagPage() {
       startProjectHref="/start"
       startProjectLabel="Fortsätt wizard"
       navItems={[
-        { href: "/dashboard/privat", label: "Översikt" },
-        { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
+        { href: routes.privatperson.overview(), label: "Översikt" },
+        { href: routes.privatperson.underlagIndex(), label: "Bostad & underlag" },
         { href: "/timeline", label: "Timeline" },
-        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/privat/dokumentinkorg", label: "Dokumentinkorg" },
+        { href: routes.privatperson.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.privatperson.documentsIndex(), label: "Dokumentinkorg" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[]}

@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { useAuth } from "../../../../components/auth-context";
 import { DocumentViewer } from "../../../../components/document-viewer";
 import { getDocumentById, subscribeDocuments, type PlatformDocument } from "../../../../lib/documents-store";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../lib/requests-store";
+import { routes } from "../../../../lib/routes";
 
 function documentStatusLabel(status: PlatformDocument["status"]): string {
   if (status === "sent") return "Skickad";
@@ -19,6 +20,7 @@ function documentStatusLabel(status: PlatformDocument["status"]): string {
 export default function BrfDocumentViewerPage() {
   const params = useParams<{ documentId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, ready } = useAuth();
 
   const [document, setDocument] = useState<PlatformDocument | null>(null);
@@ -31,11 +33,11 @@ export default function BrfDocumentViewerPage() {
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -63,6 +65,9 @@ export default function BrfDocumentViewerPage() {
 
   if (!ready || !user) return null;
 
+  const contextRequestId = searchParams.get("requestId") ?? document?.requestId ?? undefined;
+  const backHref = routes.brf.documentsIndex({ requestId: contextRequestId });
+
   return (
     <DashboardShell
       roleLabel="Bostadsrättsförening"
@@ -79,11 +84,11 @@ export default function BrfDocumentViewerPage() {
       }
       cards={[]}
       navItems={[
-        { href: "/dashboard/brf", label: "Översikt" },
-        { href: "/dashboard/brf/fastighet", label: "Fastighet" },
-        { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/brf/dokument", label: "Dokument" },
-        { href: "/dashboard/brf/filer", label: "Filer" },
+        { href: routes.brf.overview(), label: "Översikt" },
+        { href: routes.brf.propertyIndex(), label: "Fastighet" },
+        { href: routes.brf.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.brf.documentsIndex(), label: "Dokument" },
+        { href: routes.brf.filesIndex(), label: "Filer" },
       ]}
     >
       {!document ? (
@@ -94,8 +99,12 @@ export default function BrfDocumentViewerPage() {
         <DocumentViewer
           document={document}
           request={request}
-          backHref="/dashboard/brf/dokument"
-          backLabel="Till dokument"
+          backHref={backHref}
+          backLabel="Till dokumentöversikt"
+          breadcrumbs={[
+            { href: backHref, label: "Dokument" },
+            { label: document.title || "Dokument" },
+          ]}
         />
       )}
     </DashboardShell>

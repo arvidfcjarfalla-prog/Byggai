@@ -17,6 +17,7 @@ import {
   formatSnapshotTimeline,
   toSwedishRiskLabel,
 } from "../../../lib/project-snapshot";
+import { routes } from "../../../lib/routes";
 
 function formatDate(iso: string): string {
   const parsed = new Date(iso);
@@ -84,11 +85,11 @@ export default function EntreprenorForfragningarPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -137,13 +138,13 @@ export default function EntreprenorForfragningarPage() {
       roleLabel="Entreprenör"
       heading="Se förfrågningar"
       subheading="Översikt över inkomna förfrågningar. All kommunikation finns i fliken Meddelanden."
-      startProjectHref="/dashboard/entreprenor/forfragningar"
+      startProjectHref={routes.entreprenor.requestsIndex()}
       startProjectLabel="Se förfrågningar"
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
       ]}
       cards={[]}
     >
@@ -172,7 +173,7 @@ export default function EntreprenorForfragningarPage() {
                     type="button"
                     onClick={() => {
                       setSelectedRequestId(request.id);
-                      router.push(`/dashboard/entreprenor/forfragningar/request/${request.id}`);
+                      router.push(routes.entreprenor.requestDetail({ requestId: request.id }));
                     }}
                     className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                       active
@@ -258,7 +259,7 @@ export default function EntreprenorForfragningarPage() {
                       request: selectedRequest,
                       contractorId,
                     });
-                    router.push(`/dashboard/entreprenor/forfragningar/${offer.id}/analysis`);
+                    router.push(routes.entreprenor.offerAnalysis({ offerId: offer.id }));
                   }}
                   className="rounded-xl bg-[#2F2F31] px-4 py-2 text-sm font-semibold text-white hover:bg-[#19191A]"
                 >
@@ -339,7 +340,7 @@ export default function EntreprenorForfragningarPage() {
                             </td>
                             <td className="px-2 py-2">
                               <Link
-                                href={`/dashboard/entreprenor/forfragningar/${offer.id}/analysis`}
+                                href={routes.entreprenor.offerAnalysis({ offerId: offer.id })}
                                 className="inline-flex rounded-lg border border-[#D2C5B5] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                               >
                                 Öppna analys
@@ -552,13 +553,13 @@ export default function EntreprenorForfragningarPage() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  href={`/dashboard/entreprenor/forfragningar/request/${selectedRequest.id}`}
+                  href={routes.entreprenor.requestDetail({ requestId: selectedRequest.id })}
                   className="inline-flex rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                 >
                   Öppna analyssida
                 </Link>
                 <Link
-                  href={`/dashboard/entreprenor/meddelanden?requestId=${selectedRequest.id}`}
+                  href={routes.entreprenor.messagesIndex({ requestId: selectedRequest.id })}
                   className="inline-flex rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]"
                 >
                   Öppna meddelanden

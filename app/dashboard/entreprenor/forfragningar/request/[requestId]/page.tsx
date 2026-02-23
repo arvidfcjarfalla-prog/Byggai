@@ -13,6 +13,7 @@ import { OfferTimelineChart } from "../../../../../components/offers/OfferTimeli
 import { OfferTopDrivers } from "../../../../../components/offers/OfferTopDrivers";
 import { OfferTypeChart } from "../../../../../components/offers/OfferTypeChart";
 import { formatSek } from "../../../../../components/offers/format";
+import { Breadcrumbs } from "../../../../../components/ui/breadcrumbs";
 import { listDocumentsByRequest, subscribeDocuments } from "../../../../../lib/documents-store";
 import {
   buildEntreprenorOfferFlowSteps,
@@ -36,6 +37,7 @@ import {
   formatSnapshotTimeline,
   toSwedishRiskLabel,
 } from "../../../../../lib/project-snapshot";
+import { routes } from "../../../../../lib/routes";
 
 function parseAreaM2(request: PlatformRequest | null): number | undefined {
   const raw = request?.propertySnapshot?.areaSummary;
@@ -117,7 +119,7 @@ export default function EntreprenorRequestAnalysisPage() {
       return;
     }
     if (user.role !== "entreprenor") {
-      router.replace(user.role === "brf" ? "/dashboard/brf" : "/dashboard/privat");
+      router.replace(user.role === "brf" ? routes.brf.overview() : routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -223,7 +225,7 @@ export default function EntreprenorRequestAnalysisPage() {
         <section className="rounded-2xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
           <p className="text-sm text-[#6B5A47]">Ingen förfrågan hittades för ID: {requestId}</p>
           <Link
-            href="/dashboard/entreprenor/forfragningar"
+            href={routes.entreprenor.requestsIndex({ requestId })}
             className="mt-3 inline-flex rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Tillbaka till förfrågningar
@@ -247,8 +249,11 @@ export default function EntreprenorRequestAnalysisPage() {
         ? `Öppnar befintlig offertanalys (${offerStatusLabel(offer.status)} · v${offer.version}).`
         : `Offertutkast skapat från förfrågan (${offer.lineItems.length} lineItems).`
     );
-    router.push(`/dashboard/entreprenor/forfragningar/${offer.id}/analysis`);
+    router.push(routes.entreprenor.offerAnalysis({ offerId: offer.id }));
   };
+
+  const requestsIndexHref = routes.entreprenor.requestsIndex({ requestId: request.id });
+  const messagesHref = routes.entreprenor.messagesIndex({ requestId: request.id });
 
   return (
     <DashboardShell
@@ -262,16 +267,31 @@ export default function EntreprenorRequestAnalysisPage() {
         statusLabel: `${requestStatusLabel(request.status)} · ${request.audience === "brf" ? "BRF" : "Privat"}`,
       }}
     >
+      <section className="mb-4 rounded-2xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
+        <Breadcrumbs
+          items={[
+            { href: requestsIndexHref, label: "Förfrågningar" },
+            { label: request.title || "Förfrågningsanalys" },
+          ]}
+        />
+        <Link
+          href={requestsIndexHref}
+          className="inline-flex rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+        >
+          Till förfrågningsöversikt
+        </Link>
+      </section>
+
       <section className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/entreprenor/forfragningar"
+            href={requestsIndexHref}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Till inkorg
           </Link>
           <Link
-            href={`/dashboard/entreprenor/meddelanden?requestId=${encodeURIComponent(request.id)}`}
+            href={messagesHref}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Meddelanden

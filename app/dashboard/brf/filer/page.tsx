@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
 import { FilesBrowser } from "../../../components/files/files-browser";
+import { routes } from "../../../lib/routes";
 
 export default function BrfFilerPage() {
   const router = useRouter();
@@ -17,11 +18,11 @@ export default function BrfFilerPage() {
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -34,12 +35,12 @@ export default function BrfFilerPage() {
       subheading="Alla delade och mottagna projektfiler från entreprenörer och egen dokumentation."
       cards={[]}
       navItems={[
-        { href: "/dashboard/brf", label: "Översikt" },
-        { href: "/dashboard/brf/fastighet", label: "Fastighet" },
-        { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
-        { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/brf/dokumentinkorg", label: "Avtalsinkorg" },
-        { href: "/dashboard/brf/filer", label: "Filer" },
+        { href: routes.brf.overview(), label: "Översikt" },
+        { href: routes.brf.propertyIndex(), label: "Fastighet" },
+        { href: routes.brf.maintenanceIndex(), label: "Underhållsplan" },
+        { href: routes.brf.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.brf.documentsIndex(), label: "Avtalsinkorg" },
+        { href: routes.brf.filesIndex(), label: "Filer" },
       ]}
     >
       <FilesBrowser

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { RoleSwitcher } from "../components/role-switcher";
+import { routes } from "../lib/routes";
 
 const ROLE_STORAGE_KEY = "byggplattformen-role";
 
@@ -363,7 +364,7 @@ export default function BrfPage() {
 
           <div className="mt-14 text-center">
             <Link
-              href="/dashboard/brf/underhallsplan"
+              href={routes.brf.maintenanceIndex()}
               className="group inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2"
             >
               Skapa åtgärdsplan
@@ -502,7 +503,7 @@ export default function BrfPage() {
               <a href="#hur" className="hover:text-[#8C7860]">Så funkar det</a>
               <a href="#varfor" className="hover:text-[#8C7860]">Varför detta</a>
               <a href="#faq" className="hover:text-[#8C7860]">FAQ</a>
-              <Link href="/dashboard/brf/underhallsplan" className="hover:text-[#8C7860]">Kom igång</Link>
+              <Link href={routes.brf.maintenanceIndex()} className="hover:text-[#8C7860]">Kom igång</Link>
             </div>
           </div>
         </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../components/dashboard-shell";
 import { FileDeletionNotificationsWidget } from "../../components/file-deletion-notifications-widget";
 import { useAuth } from "../../components/auth-context";
+import { routes } from "../../lib/routes";
 
 export default function PrivatDashboardPage() {
   const router = useRouter();
@@ -16,8 +17,8 @@ export default function PrivatDashboardPage() {
       router.replace("/login");
       return;
     }
-    if (user.role === "brf") router.replace("/dashboard/brf");
-    if (user.role === "entreprenor") router.replace("/dashboard/entreprenor");
+    if (user.role === "brf") router.replace(routes.brf.overview());
+    if (user.role === "entreprenor") router.replace(routes.entreprenor.overview());
   }, [ready, router, user]);
 
   if (!ready) {
@@ -40,12 +41,12 @@ export default function PrivatDashboardPage() {
       heading="Översikt för ditt byggprojekt"
       subheading="Här ser du nästa steg i ditt projekt, vilka underlag som saknas och när det är dags att gå vidare mot upphandling."
       navItems={[
-        { href: "/dashboard/privat", label: "Översikt" },
-        { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
+        { href: routes.privatperson.overview(), label: "Översikt" },
+        { href: routes.privatperson.underlagIndex(), label: "Bostad & underlag" },
         { href: "/timeline", label: "Timeline" },
-        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/privat/dokumentinkorg", label: "Dokumentinkorg" },
-        { href: "/dashboard/privat/filer", label: "Filer" },
+        { href: routes.privatperson.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.privatperson.documentsIndex(), label: "Dokumentinkorg" },
+        { href: routes.privatperson.filesIndex(), label: "Filer" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[
@@ -53,7 +54,7 @@ export default function PrivatDashboardPage() {
           title: "Bostad & underlag",
           body: "Samla bostadsfakta, kontaktvägar och filer på ett ställe för tydligare offertförfrågningar.",
           ctaLabel: "Öppna underlag",
-          ctaHref: "/dashboard/privat/underlag",
+          ctaHref: routes.privatperson.underlagIndex(),
         },
         {
           title: "Fortsätt projektguiden",
@@ -77,13 +78,13 @@ export default function PrivatDashboardPage() {
           title: "Tidslinje",
           body: "Följ projektets läge med milstolpar och händelser från förfrågan till avtal, ÄTA och avslut.",
           ctaLabel: "Öppna tidslinje",
-          ctaHref: "/dashboard/privat/tidslinje",
+          ctaHref: routes.privatperson.timelineIndex(),
         },
         {
           title: "Mina förfrågningar",
           body: "Följ skickade förfrågningar, se mottagande entreprenörer och komplettera underlag.",
           ctaLabel: "Öppna förfrågningar",
-          ctaHref: "/dashboard/privat/forfragningar",
+          ctaHref: routes.privatperson.requestsIndex(),
         },
       ]}
       topContent={<FileDeletionNotificationsWidget workspaceId="privat" />}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { RequestsOutboxPanel } from "../../../components/requests-outbox-panel";
 import { useAuth } from "../../../components/auth-context";
+import { routes } from "../../../lib/routes";
 
 export default function PrivatForfragningarPage() {
   const router = useRouter();
@@ -17,11 +18,11 @@ export default function PrivatForfragningarPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -47,11 +48,11 @@ export default function PrivatForfragningarPage() {
       startProjectHref="/start/sammanfattning"
       startProjectLabel="Skapa ny förfrågan"
       navItems={[
-        { href: "/dashboard/privat", label: "Översikt" },
-        { href: "/dashboard/privat/underlag", label: "Bostad & underlag" },
+        { href: routes.privatperson.overview(), label: "Översikt" },
+        { href: routes.privatperson.underlagIndex(), label: "Bostad & underlag" },
         { href: "/timeline", label: "Timeline" },
-        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/privat/dokumentinkorg", label: "Dokumentinkorg" },
+        { href: routes.privatperson.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.privatperson.documentsIndex(), label: "Dokumentinkorg" },
         { href: "/start", label: "Initiera / fortsätt projekt" },
       ]}
       cards={[]}

@@ -8,6 +8,7 @@ import {
   writeBrfRequestMeta,
   type BrfStartMode,
 } from "../../lib/brf-start";
+import { routes } from "../../lib/routes";
 
 function StartTypeCard({
   title,
@@ -90,7 +91,7 @@ export default function BrfStartPage() {
           <StartTypeCard
             title="Vi har underhållsplan"
             body="Ladda upp plan och extrahera åtgärder. Snabbaste vägen till ett första utskick."
-            href="/dashboard/brf/underhallsplan"
+            href={routes.brf.maintenanceIndex()}
             onClick={() => saveStartMode("underhallsplan")}
             accent="bg-[#EAF3FB] text-[#34506B]"
           />

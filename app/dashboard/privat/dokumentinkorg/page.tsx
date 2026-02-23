@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { routes } from "../../../lib/routes";
 
 export default function PrivatDokumentinkorgLegacyPage() {
-  redirect("/dashboard/privat/dokument");
+  redirect(routes.privatperson.documentsIndex());
 }

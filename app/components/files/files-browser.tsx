@@ -17,6 +17,7 @@ import {
 import type { ProjectFile, ProjectFolder, WorkspaceId } from "../../lib/project-files/types";
 import { sendRequestMessage } from "../../lib/request-messages";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../lib/requests-store";
+import { routes } from "../../lib/routes";
 
 const FOLDERS: Array<{ id: ProjectFolder; label: string }> = [
   { id: "offert", label: "Offert" },
@@ -334,16 +335,16 @@ export function FilesBrowser({
     }
 
     if (workspaceId === "entreprenor") {
-      router.push(`/dashboard/entreprenor/dokument/${found.id}`);
+      router.push(routes.entreprenor.documentDetail({ documentId: found.id, requestId: projectId }));
       return;
     }
 
     if (workspaceId === "brf") {
-      router.push(`/dashboard/brf/dokument/${found.id}`);
+      router.push(routes.brf.documentDetail({ documentId: found.id, requestId: projectId }));
       return;
     }
 
-    router.push(`/dashboard/privat/dokument/${found.id}`);
+    router.push(routes.privatperson.documentDetail({ documentId: found.id, requestId: projectId }));
   };
 
   return (
@@ -387,7 +388,7 @@ export function FilesBrowser({
             onClick={handleJumpByRefId}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
-            Hitta RefID
+            Öppna/markera (genväg)
           </button>
         </div>
 

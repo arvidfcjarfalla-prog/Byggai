@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { useAuth } from "../../../../components/auth-context";
 import { DocumentViewer } from "../../../../components/document-viewer";
 import { getDocumentById, subscribeDocuments, type PlatformDocument } from "../../../../lib/documents-store";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../lib/requests-store";
+import { routes } from "../../../../lib/routes";
 
 function documentStatusLabel(status: PlatformDocument["status"]): string {
   if (status === "sent") return "Skickad";
@@ -19,6 +20,7 @@ function documentStatusLabel(status: PlatformDocument["status"]): string {
 export default function PrivatDocumentViewerPage() {
   const params = useParams<{ documentId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, ready } = useAuth();
 
   const [document, setDocument] = useState<PlatformDocument | null>(null);
@@ -31,11 +33,11 @@ export default function PrivatDocumentViewerPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "entreprenor") {
-      router.replace("/dashboard/entreprenor");
+      router.replace(routes.entreprenor.overview());
     }
   }, [ready, router, user]);
 
@@ -63,6 +65,9 @@ export default function PrivatDocumentViewerPage() {
 
   if (!ready || !user) return null;
 
+  const contextRequestId = searchParams.get("requestId") ?? document?.requestId ?? undefined;
+  const backHref = routes.privatperson.documentsIndex({ requestId: contextRequestId });
+
   return (
     <DashboardShell
       roleLabel="Privatperson"
@@ -79,11 +84,11 @@ export default function PrivatDocumentViewerPage() {
       }
       cards={[]}
       navItems={[
-        { href: "/dashboard/privat", label: "Översikt" },
-        { href: "/dashboard/privat/underlag", label: "Bostad och underlag" },
-        { href: "/dashboard/privat/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/privat/dokument", label: "Dokument" },
-        { href: "/dashboard/privat/filer", label: "Filer" },
+        { href: routes.privatperson.overview(), label: "Översikt" },
+        { href: routes.privatperson.underlagIndex(), label: "Bostad och underlag" },
+        { href: routes.privatperson.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.privatperson.documentsIndex(), label: "Dokument" },
+        { href: routes.privatperson.filesIndex(), label: "Filer" },
       ]}
     >
       {!document ? (
@@ -94,8 +99,12 @@ export default function PrivatDocumentViewerPage() {
         <DocumentViewer
           document={document}
           request={request}
-          backHref="/dashboard/privat/dokument"
-          backLabel="Till dokument"
+          backHref={backHref}
+          backLabel="Till dokumentöversikt"
+          breadcrumbs={[
+            { href: backHref, label: "Dokument" },
+            { label: document.title || "Dokument" },
+          ]}
         />
       )}
     </DashboardShell>

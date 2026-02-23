@@ -14,6 +14,7 @@ import {
 } from "../lib/requests-store";
 import { listLatestOffersByProject, subscribeOffers } from "../lib/offers/store";
 import type { Offer } from "../lib/offers/types";
+import { routes } from "../lib/routes";
 
 function statusLabel(status: PlatformRequest["status"]): string {
   if (status === "received") return "Svar inkommen";
@@ -102,7 +103,7 @@ export function RequestsOutboxPanel({
     user?.name?.trim() ||
     user?.email ||
     (audience === "brf" ? "BRF-kontakt" : "Privat beställare");
-  const roleSegment = audience === "brf" ? "brf" : "privat";
+  const roleRoutes = audience === "brf" ? routes.brf : routes.privatperson;
 
   const handlePropertySharingToggle = (nextValue: boolean) => {
     if (!selectedRequest) return;
@@ -139,19 +140,19 @@ export function RequestsOutboxPanel({
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  href={`/dashboard/${roleSegment}/meddelanden`}
+                  href={roleRoutes.messagesIndex({ requestId: selectedRequest.id })}
                   className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                 >
                   Öppna meddelanden
                 </Link>
                 <Link
-                  href={`/dashboard/${roleSegment}/dokument`}
+                  href={roleRoutes.documentsIndex({ requestId: selectedRequest.id })}
                   className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                 >
-                  Öppna dokument
+                  Öppna dokumentöversikt
                 </Link>
                 <Link
-                  href={`/dashboard/${roleSegment}/tidslinje?projectId=${encodeURIComponent(selectedRequest.id)}`}
+                  href={roleRoutes.timelineIndex({ projectId: selectedRequest.id })}
                   className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                 >
                   Öppna tidslinje
@@ -199,7 +200,10 @@ export function RequestsOutboxPanel({
                           </div>
                           <div className="self-center">
                             <Link
-                              href={`/dashboard/privat/forfragningar/${offer.id}`}
+                              href={routes.privatperson.offerDetail({
+                                offerId: offer.id,
+                                requestId: selectedRequest.id,
+                              })}
                               className="inline-flex rounded-lg border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
                             >
                               Öppna kundvy

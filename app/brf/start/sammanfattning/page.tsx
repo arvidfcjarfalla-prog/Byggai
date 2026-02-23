@@ -38,6 +38,7 @@ import {
   type ProjectSnapshot,
   writeProjectSnapshotToStorage,
 } from "../../../lib/project-snapshot";
+import { routes } from "../../../lib/routes";
 import {
   defaultRecipientsForAudience,
   saveRequest,
@@ -593,7 +594,7 @@ export default function BrfStartSammanfattningPage() {
                 Skicka till entreprenörer
               </button>
               <Link
-                href="/dashboard/brf/forfragningar"
+                href={routes.brf.requestsIndex()}
                 className="inline-flex w-full items-center justify-center rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
               >
                 Öppna mina förfrågningar

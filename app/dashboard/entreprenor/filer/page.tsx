@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { useAuth } from "../../../components/auth-context";
 import { FilesBrowser } from "../../../components/files/files-browser";
+import { routes } from "../../../lib/routes";
 
 export default function EntreprenorFilerPage() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function EntreprenorFilerPage() {
       return;
     }
     if (user.role !== "entreprenor") {
-      router.replace(user.role === "brf" ? "/dashboard/brf" : "/dashboard/privat");
+      router.replace(user.role === "brf" ? routes.brf.overview() : routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -30,11 +31,11 @@ export default function EntreprenorFilerPage() {
       subheading="Projektbundna filer och PDF-dokument (offert, avtal, ÄTA) per förfrågan."
       cards={[]}
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
-        { href: "/dashboard/entreprenor/filer", label: "Filer" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
+        { href: routes.entreprenor.filesIndex(), label: "Filer" },
       ]}
     >
       <FilesBrowser

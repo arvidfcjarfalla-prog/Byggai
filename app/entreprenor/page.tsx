@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { RoleSwitcher } from "../components/role-switcher";
+import { routes } from "../lib/routes";
 
 const ROLE_STORAGE_KEY = "byggplattformen-role";
 
@@ -189,7 +190,7 @@ export default function EntreprenorPage() {
               className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-6 text-sm"
             >
               {[
-                { href: "/dashboard/entreprenor/forfragningar", label: "Förfrågningar" },
+                { href: routes.entreprenor.requestsIndex(), label: "Förfrågningar" },
                 { href: "/konto?role=entreprenor", label: "Skapa konto" },
                 { href: "/?chooseRole=1", label: "Byt roll" },
                 { href: "#fordelar", label: "Fördelar" },
@@ -240,7 +241,7 @@ export default function EntreprenorPage() {
 
               <div className="mt-10 flex flex-col gap-4 opacity-0 animate-fade-in-up delay-300 sm:flex-row sm:items-center">
                 <Link
-                  href="/dashboard/entreprenor/forfragningar"
+                  href={routes.entreprenor.requestsIndex()}
                   className="group inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#8C7860] to-[#6B5A47] px-8 py-4 text-base font-semibold text-white shadow-lg outline-none transition-all duration-300 hover:scale-105 hover:shadow-xl focus-visible:ring-2 focus-visible:ring-[#8C7860] focus-visible:ring-offset-2 sm:flex-none"
                 >
                   Visa förfrågningar

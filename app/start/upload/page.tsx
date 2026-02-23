@@ -46,6 +46,7 @@ import {
   formatSnapshotTimeline,
   toSwedishRiskLabel,
 } from "../../lib/project-snapshot";
+import { routes } from "../../lib/routes";
 import {
   fromProcurementAction,
   readBrfActionsDraft,
@@ -619,9 +620,9 @@ export function BrfUploadWorkspace({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const actionDetailsBasePath = pathname.startsWith("/dashboard/")
-    ? "/dashboard/brf/underhallsplan/atgard"
+    ? routes.brf.actionDetailBase()
     : "/start/upload/atgard";
-  const returnPath = pathname || "/dashboard/brf/underhallsplan";
+  const returnPath = pathname || routes.brf.maintenanceIndex();
   const [initialState] = useState(() => {
     const draftActions = readBrfActionsDraft();
     const viewState = readBrfUploadViewState();
@@ -1028,13 +1029,13 @@ export function BrfUploadWorkspace({
             </div>
             <div className="flex items-center gap-2">
               <Link
-                href="/dashboard/brf"
+                href={routes.brf.overview()}
                 className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
               >
                 Till BRF-dashboard
               </Link>
               <Link
-                href="/dashboard/brf/forfragningar"
+                href={routes.brf.requestsIndex()}
                 className="rounded-xl bg-[#8C7860] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6B5A47]"
               >
                 Mina förfrågningar

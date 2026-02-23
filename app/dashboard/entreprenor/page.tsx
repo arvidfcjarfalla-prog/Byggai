@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../components/dashboard-shell";
 import { useAuth } from "../../components/auth-context";
+import { routes } from "../../lib/routes";
 
 export default function EntreprenorDashboardPage() {
   const router = useRouter();
@@ -16,11 +17,11 @@ export default function EntreprenorDashboardPage() {
       return;
     }
     if (user.role === "brf") {
-      router.replace("/dashboard/brf");
+      router.replace(routes.brf.overview());
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -43,39 +44,39 @@ export default function EntreprenorDashboardPage() {
       roleLabel="Entreprenör"
       heading="Entreprenörsöversikt"
       subheading="Se relevanta projektförfrågningar, håll koll på kapacitet och svara med tydliga underlag i rätt tid."
-      startProjectHref="/dashboard/entreprenor/forfragningar"
+      startProjectHref={routes.entreprenor.requestsIndex()}
       startProjectLabel="Se förfrågningar"
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
-        { href: "/dashboard/entreprenor/filer", label: "Filer" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
+        { href: routes.entreprenor.filesIndex(), label: "Filer" },
       ]}
       cards={[
         {
           title: "Nya förfrågningar",
           body: "Följ inkomna projekt som matchar din profil, geografi och kapacitet.",
           ctaLabel: "Visa förfrågningar",
-          ctaHref: "/dashboard/entreprenor/forfragningar",
+          ctaHref: routes.entreprenor.requestsIndex(),
         },
         {
           title: "Offertutkast",
           body: "Skapa och justera offertutkast från strukturerade projektprofiler för snabbare svar.",
           ctaLabel: "Öppna offerter",
-          ctaHref: "/dashboard/entreprenor/forfragningar",
+          ctaHref: routes.entreprenor.requestsIndex(),
         },
         {
           title: "Kapacitetsläge",
           body: "Planera beläggning och tacka nej till fel uppdrag med tydliga skäl.",
           ctaLabel: "Hantera kapacitet",
-          ctaHref: "/dashboard/entreprenor/forfragningar",
+          ctaHref: routes.entreprenor.requestsIndex(),
         },
         {
           title: "Meddelanden",
           body: "Kommunicera med beställare i en ren inkorg/chat-vy med bilagor.",
           ctaLabel: "Öppna meddelanden",
-          ctaHref: "/dashboard/entreprenor/meddelanden",
+          ctaHref: routes.entreprenor.messagesIndex(),
         },
       ]}
     />

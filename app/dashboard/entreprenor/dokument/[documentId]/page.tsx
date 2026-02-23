@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DashboardShell } from "../../../../components/dashboard-shell";
 import { useAuth } from "../../../../components/auth-context";
 import { EntreprenorOfferFlowShell } from "../../../../components/offers/EntreprenorOfferFlowShell";
+import { Breadcrumbs } from "../../../../components/ui/breadcrumbs";
 import {
   createNextVersion,
   getDocumentById,
@@ -24,6 +26,7 @@ import {
 import { listFiles, subscribeProjectFiles } from "../../../../lib/project-files/store";
 import type { ProjectFile } from "../../../../lib/project-files/types";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../lib/requests-store";
+import { routes } from "../../../../lib/routes";
 
 function fieldValueToString(value: DocumentField["value"]): string {
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -64,6 +67,7 @@ function getContractorOfferForUser(offers: Offer[], userId?: string, userEmail?:
 export default function EntreprenorDocumentEditorPage() {
   const params = useParams<{ documentId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, ready } = useAuth();
   const documentId = params.documentId;
 
@@ -83,7 +87,7 @@ export default function EntreprenorDocumentEditorPage() {
       return;
     }
     if (user.role !== "entreprenor") {
-      router.replace(user.role === "brf" ? "/dashboard/brf" : "/dashboard/privat");
+      router.replace(user.role === "brf" ? routes.brf.overview() : routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -380,7 +384,7 @@ export default function EntreprenorDocumentEditorPage() {
         senderWorkspaceId: "entreprenor",
       });
       setNotice("Ny version skapad och PDF tillagd i Filer.");
-      router.push(`/dashboard/entreprenor/dokument/${next.id}`);
+      router.push(routes.entreprenor.documentDetail({ documentId: next.id, requestId: document.requestId }));
     } catch (error) {
       const fallback = "Ny version skapades, men PDF kunde inte genereras.";
       setNotice(error instanceof Error && error.message ? error.message : fallback);
@@ -427,22 +431,40 @@ export default function EntreprenorDocumentEditorPage() {
     }
   };
 
+  const contextRequestId = searchParams.get("requestId") ?? document.requestId;
+  const documentsIndexHref = routes.entreprenor.documentsIndex({ requestId: contextRequestId });
+
   return (
     <DashboardShell
       roleLabel="Entreprenör"
       heading="Dokumenteditor"
       subheading={`${document.title} · v${document.version} · ${statusLabel(document.status)}`}
-      startProjectHref="/dashboard/entreprenor/dokument"
+      startProjectHref={documentsIndexHref}
       startProjectLabel="Till dokumentöversikt"
       navItems={[
-        { href: "/dashboard/entreprenor", label: "Översikt" },
-        { href: "/dashboard/entreprenor/forfragningar", label: "Se förfrågningar" },
-        { href: "/dashboard/entreprenor/meddelanden", label: "Meddelanden" },
-        { href: "/dashboard/entreprenor/dokument", label: "Dokumentgenerator" },
-        { href: "/dashboard/entreprenor/filer", label: "Filer" },
+        { href: routes.entreprenor.overview(), label: "Översikt" },
+        { href: routes.entreprenor.requestsIndex(), label: "Se förfrågningar" },
+        { href: routes.entreprenor.messagesIndex(), label: "Meddelanden" },
+        { href: routes.entreprenor.documentsIndex(), label: "Dokumentgenerator" },
+        { href: routes.entreprenor.filesIndex(), label: "Filer" },
       ]}
       cards={[]}
     >
+      <section className="mb-4 rounded-2xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
+        <Breadcrumbs
+          items={[
+            { href: documentsIndexHref, label: "Dokument" },
+            { label: document.title || "Dokumenteditor" },
+          ]}
+        />
+        <Link
+          href={documentsIndexHref}
+          className="inline-flex rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+        >
+          Till dokumentöversikt
+        </Link>
+      </section>
+
       <EntreprenorOfferFlowShell
         steps={flowSteps}
         stepperSubheading="Steg 4 är live preview och slutlig kvalitetssäkring innan du skickar PDF till kunden."

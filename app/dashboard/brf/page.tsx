@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../components/dashboard-shell";
 import { FileDeletionNotificationsWidget } from "../../components/file-deletion-notifications-widget";
 import { useAuth } from "../../components/auth-context";
+import { routes } from "../../lib/routes";
 
 export default function BrfDashboardPage() {
   const router = useRouter();
@@ -17,10 +18,10 @@ export default function BrfDashboardPage() {
       return;
     }
     if (user.role === "privat" || user.role === "osaker") {
-      router.replace("/dashboard/privat");
+      router.replace(routes.privatperson.overview());
       return;
     }
-    if (user.role === "entreprenor") router.replace("/dashboard/entreprenor");
+    if (user.role === "entreprenor") router.replace(routes.entreprenor.overview());
   }, [ready, router, user]);
 
   if (!ready) {
@@ -42,16 +43,16 @@ export default function BrfDashboardPage() {
       roleLabel="Bostadsrättsförening"
       heading="BRF-översikt för förvaltning och upphandling"
       subheading="Ladda upp underhållsplan, prioritera åtgärder och driv upphandling med tydlig dokumentation från beslut till garanti."
-      startProjectHref="/dashboard/brf/underhallsplan"
+      startProjectHref={routes.brf.maintenanceIndex()}
       startProjectLabel="Underhållsplan"
       navItems={[
-        { href: "/dashboard/brf", label: "Översikt" },
-        { href: "/dashboard/brf/fastighet", label: "Fastighet" },
-        { href: "/dashboard/brf/underhallsplan", label: "Underhållsplan" },
+        { href: routes.brf.overview(), label: "Översikt" },
+        { href: routes.brf.propertyIndex(), label: "Fastighet" },
+        { href: routes.brf.maintenanceIndex(), label: "Underhållsplan" },
         { href: "/timeline", label: "Timeline" },
-        { href: "/dashboard/brf/forfragningar", label: "Mina förfrågningar" },
-        { href: "/dashboard/brf/dokumentinkorg", label: "Avtalsinkorg" },
-        { href: "/dashboard/brf/filer", label: "Filer" },
+        { href: routes.brf.requestsIndex(), label: "Mina förfrågningar" },
+        { href: routes.brf.documentsIndex(), label: "Avtalsinkorg" },
+        { href: routes.brf.filesIndex(), label: "Filer" },
         { href: "/brf/start", label: "Initiera BRF-projekt" },
       ]}
       cards={[
@@ -59,13 +60,13 @@ export default function BrfDashboardPage() {
           title: "Fastighet",
           body: "Se samlad fastighetsdata, komponenter och dokument med tydliga filtyper och sökbara listor.",
           ctaLabel: "Öppna fastighet",
-          ctaHref: "/dashboard/brf/fastighet",
+          ctaHref: routes.brf.propertyIndex(),
         },
         {
           title: "Underhållsplan",
           body: "Ladda upp föreningens underhållsplan och få en prioriterad åtgärdslista med risk- och tidsbedömning.",
           ctaLabel: "Ladda upp underhållsplan",
-          ctaHref: "/dashboard/brf/underhallsplan",
+          ctaHref: routes.brf.maintenanceIndex(),
         },
         {
           title: "Upphandling",
@@ -77,19 +78,19 @@ export default function BrfDashboardPage() {
           title: "Styrelsebeslut",
           body: "Samla protokoll, val av entreprenör och avtalsunderlag i en spårbar beslutslogg.",
           ctaLabel: "Öppna fastighetsvy",
-          ctaHref: "/dashboard/brf/fastighet",
+          ctaHref: routes.brf.propertyIndex(),
         },
         {
           title: "Tidslinje",
           body: "Följ projektstatus med milstolpar och händelser från förfrågan till avtal, ÄTA och avslut.",
           ctaLabel: "Öppna tidslinje",
-          ctaHref: "/dashboard/brf/tidslinje",
+          ctaHref: routes.brf.timelineIndex(),
         },
         {
           title: "Mina förfrågningar",
           body: "Se allt som skickats, vilka entreprenörer som fått underlag och komplettera efter utskick.",
           ctaLabel: "Öppna förfrågningar",
-          ctaHref: "/dashboard/brf/forfragningar",
+          ctaHref: routes.brf.requestsIndex(),
         },
       ]}
       topContent={<FileDeletionNotificationsWidget workspaceId="brf" />}

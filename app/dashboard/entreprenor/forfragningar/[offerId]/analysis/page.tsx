@@ -9,6 +9,7 @@ import { OfferInternalCostEditor } from "../../../../../components/offers/OfferI
 import { DashboardShell } from "../../../../../components/dashboard-shell";
 import { useAuth } from "../../../../../components/auth-context";
 import { EntreprenorOfferFlowShell } from "../../../../../components/offers/EntreprenorOfferFlowShell";
+import { Breadcrumbs } from "../../../../../components/ui/breadcrumbs";
 import {
   analyzeOfferForContractor,
   type StructuredOfferAiResult,
@@ -33,6 +34,7 @@ import {
 } from "../../../../../lib/offers/flow";
 import type { Offer, OfferInternalCostLine } from "../../../../../lib/offers/types";
 import { listRequests, subscribeRequests, type PlatformRequest } from "../../../../../lib/requests-store";
+import { routes } from "../../../../../lib/routes";
 
 function formatSek(value: number): string {
   return `${new Intl.NumberFormat("sv-SE").format(Math.round(value))} kr`;
@@ -95,7 +97,7 @@ export default function EntreprenorOfferAnalysisPage() {
       return;
     }
     if (user.role !== "entreprenor") {
-      router.replace(user.role === "brf" ? "/dashboard/brf" : "/dashboard/privat");
+      router.replace(user.role === "brf" ? routes.brf.overview() : routes.privatperson.overview());
     }
   }, [ready, router, user]);
 
@@ -265,7 +267,7 @@ export default function EntreprenorOfferAnalysisPage() {
       lines: cloneCostLines(result.offer.internalEstimate?.costLines ?? []),
     });
     if (result.offer.id !== currentOfferId) {
-      router.replace(`/dashboard/entreprenor/forfragningar/${result.offer.id}/analysis`);
+      router.replace(routes.entreprenor.offerAnalysis({ offerId: result.offer.id }));
     }
     return result;
   };
@@ -329,6 +331,15 @@ export default function EntreprenorOfferAnalysisPage() {
 
   const analysisOffer = offerWithDraftCosts ?? offer;
   const hasInternalCostData = (profitability?.internalCostExVat ?? 0) > 0;
+  const requestsIndexHref = routes.entreprenor.requestsIndex({ requestId: offer.projectId });
+  const requestDetailHref = routes.entreprenor.requestDetail({ requestId: offer.projectId });
+  const documentsIndexHref = routes.entreprenor.documentsIndex({ requestId: offer.projectId });
+  const latestQuoteDocumentHref = latestQuoteDocument
+    ? routes.entreprenor.documentDetail({
+        documentId: latestQuoteDocument.id,
+        requestId: offer.projectId,
+      })
+    : null;
 
   return (
     <DashboardShell
@@ -342,36 +353,47 @@ export default function EntreprenorOfferAnalysisPage() {
         statusLabel: `Offert v${offer.version} · ${statusLabel(offer.status)}`,
       }}
     >
+      <section className="mb-4 rounded-2xl border border-[#E6DFD6] bg-white p-4 shadow-sm">
+        <Breadcrumbs
+          items={[
+            { href: requestsIndexHref, label: "Förfrågningar" },
+            { label: `Offert ${offer.version}` },
+          ]}
+        />
+        <Link
+          href={requestsIndexHref}
+          className="inline-flex rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+        >
+          Till förfrågningsöversikt
+        </Link>
+      </section>
+
       <section className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
           <Link
-            href="/dashboard/entreprenor/forfragningar"
+            href={requestsIndexHref}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Tillbaka till förfrågningar
           </Link>
           <Link
-            href={`/dashboard/entreprenor/forfragningar/request/${encodeURIComponent(offer.projectId)}`}
+            href={requestDetailHref}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Förfrågningsanalys
           </Link>
           <Link
-            href={
-              latestQuoteDocument
-                ? `/dashboard/entreprenor/dokument/${encodeURIComponent(latestQuoteDocument.id)}`
-                : `/dashboard/entreprenor/dokument?requestId=${encodeURIComponent(offer.projectId)}`
-            }
+            href={documentsIndexHref}
             className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
           >
             Generera offertdokument
           </Link>
-          {latestQuoteDocument && (
+          {latestQuoteDocumentHref && (
             <Link
-              href={`/dashboard/entreprenor/dokument/${encodeURIComponent(latestQuoteDocument.id)}`}
+              href={latestQuoteDocumentHref}
               className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
             >
-              Öppna live preview
+              Öppna live preview (genväg)
             </Link>
           )}
         </div>

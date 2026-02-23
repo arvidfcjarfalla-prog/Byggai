@@ -9,6 +9,7 @@ import {
   type RequestMessageType,
 } from "../request-messages";
 import { listRequests, type PlatformRequest } from "../requests-store";
+import { routes } from "../routes";
 import type {
   TimelineAction,
   TimelineEvent,
@@ -41,7 +42,7 @@ export function buildProjectTimeline(input: {
   const messages = sources?.messages ?? listRequestMessages(projectId);
 
   const requestHref = requestLink(role, projectId);
-  const documentHref = (documentId: string) => documentLink(role, documentId);
+  const documentHref = (documentId: string) => documentLink(role, documentId, projectId);
   const filesHref = filesLink(role);
   const messagesHref = messagesLink(role, projectId);
 
@@ -254,7 +255,7 @@ export function buildProjectTimeline(input: {
       label: `${typeLabel} ${refLabel} skapad`,
       refId: document.refId || undefined,
       filters: baseFilters,
-      link: { href: documentHref(document.id), label: "Öppna dokument" },
+      link: { href: documentHref(document.id), label: "Öppna dokument (genväg)" },
     });
 
     if (document.sentAt) {
@@ -265,7 +266,7 @@ export function buildProjectTimeline(input: {
         label: `${typeLabel} ${refLabel} skickad`,
         refId: document.refId || undefined,
         filters: baseFilters,
-        link: { href: documentHref(document.id), label: "Öppna dokument" },
+        link: { href: documentHref(document.id), label: "Öppna dokument (genväg)" },
       });
     }
 
@@ -277,7 +278,7 @@ export function buildProjectTimeline(input: {
         label: `${typeLabel} ${refLabel} godkänd`,
         refId: document.refId || undefined,
         filters: baseFilters,
-        link: { href: documentHref(document.id), label: "Öppna dokument" },
+        link: { href: documentHref(document.id), label: "Öppna dokument (genväg)" },
       });
     }
 
@@ -289,7 +290,7 @@ export function buildProjectTimeline(input: {
         label: `${typeLabel} ${refLabel} avvisad`,
         refId: document.refId || undefined,
         filters: baseFilters,
-        link: { href: documentHref(document.id), label: "Öppna dokument" },
+        link: { href: documentHref(document.id), label: "Öppna dokument (genväg)" },
       });
     }
   });
@@ -387,56 +388,53 @@ function compareTimestampDesc(a: string | null, b: string | null): number {
   return bValue - aValue;
 }
 
-function roleDashboardSegment(role: TimelineRole): "entreprenor" | "brf" | "privat" {
-  if (role === "entreprenor") return "entreprenor";
-  if (role === "brf") return "brf";
-  return "privat";
-}
-
 function requestLink(role: TimelineRole, projectId: string): string {
-  const segment = roleDashboardSegment(role);
-  if (segment === "entreprenor") {
-    return `/dashboard/entreprenor/forfragningar?requestId=${encodeURIComponent(projectId)}`;
-  }
-  return `/dashboard/${segment}/forfragningar`;
+  if (role === "entreprenor") return routes.entreprenor.requestsIndex({ requestId: projectId });
+  if (role === "brf") return routes.brf.requestsIndex({ requestId: projectId });
+  return routes.privatperson.requestsIndex({ requestId: projectId });
 }
 
-function documentLink(role: TimelineRole, documentId: string): string {
+function documentLink(role: TimelineRole, documentId: string, projectId: string): string {
   if (role === "entreprenor") {
-    return `/dashboard/entreprenor/dokument/${encodeURIComponent(documentId)}`;
+    return routes.entreprenor.documentDetail({ documentId, requestId: projectId });
   }
-  const segment = roleDashboardSegment(role);
-  return `/dashboard/${segment}/dokument/${encodeURIComponent(documentId)}`;
+  if (role === "brf") {
+    return routes.brf.documentDetail({ documentId, requestId: projectId });
+  }
+  return routes.privatperson.documentDetail({ documentId, requestId: projectId });
 }
 
 function filesLink(role: TimelineRole): string {
-  const segment = roleDashboardSegment(role);
-  return `/dashboard/${segment}/filer`;
+  if (role === "entreprenor") return routes.entreprenor.filesIndex();
+  if (role === "brf") return routes.brf.filesIndex();
+  return routes.privatperson.filesIndex();
 }
 
 function messagesLink(role: TimelineRole, projectId: string): string {
   if (role === "entreprenor") {
-    return `/dashboard/entreprenor/meddelanden?requestId=${encodeURIComponent(projectId)}`;
+    return routes.entreprenor.messagesIndex({ requestId: projectId });
   }
-  const segment = roleDashboardSegment(role);
-  return `/dashboard/${segment}/meddelanden`;
+  if (role === "brf") return routes.brf.messagesIndex({ requestId: projectId });
+  return routes.privatperson.messagesIndex({ requestId: projectId });
 }
 
 function roleActions(role: TimelineRole, projectId: string): TimelineAction[] {
   if (role === "entreprenor") {
-    const documentRoute = `/dashboard/entreprenor/dokument?requestId=${encodeURIComponent(projectId)}`;
+    const documentRoute = routes.entreprenor.documentsIndex({ requestId: projectId });
     return [
       { id: "create-quote", label: "Skapa offert", href: documentRoute },
       { id: "send-quote", label: "Skicka offert", href: documentRoute },
       { id: "create-contract", label: "Skapa avtal", href: documentRoute },
       { id: "create-ata", label: "Skapa ÄTA", href: documentRoute },
-      { id: "upload-attachment", label: "Ladda upp bilaga", href: "/dashboard/entreprenor/filer" },
+      { id: "upload-attachment", label: "Ladda upp bilaga", href: routes.entreprenor.filesIndex() },
     ];
   }
 
-  const segment = roleDashboardSegment(role);
   const startRoute = role === "brf" ? "/brf/start" : "/start";
-  const inboxRoute = `/dashboard/${segment}/dokument`;
+  const inboxRoute =
+    role === "brf"
+      ? routes.brf.documentsIndex({ requestId: projectId })
+      : routes.privatperson.documentsIndex({ requestId: projectId });
 
   return [
     { id: "create-request", label: "Skapa anbudsförfrågan", href: startRoute },
