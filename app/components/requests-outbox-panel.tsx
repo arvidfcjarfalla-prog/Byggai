@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useActiveProject } from "./active-project-context";
 import { useAuth } from "./auth-context";
+import { ChangeOrdersPanel } from "./change-orders/change-orders-panel";
 import { RequestConversationsSidebar } from "./request-conversations-sidebar";
 import { RequestMessagesPanel } from "./request-messages-panel";
 import {
@@ -53,18 +55,27 @@ export function RequestsOutboxPanel({
   mode?: "messages" | "documents" | "overview";
 }) {
   const { user } = useAuth();
+  const { activeProject } = useActiveProject();
   const [requests, setRequests] = useState<PlatformRequest[]>([]);
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
   const [, setOffersRefreshKey] = useState(0);
+  const scopedProjectId = activeProject?.audience === audience ? activeProject.id : null;
+  const isProjectScoped = Boolean(scopedProjectId);
 
   useEffect(() => {
     const sync = () => {
-      const filtered = listRequests().filter((request) => request.audience === audience);
+      let filtered = listRequests().filter((request) => request.audience === audience);
+      if (scopedProjectId) {
+        filtered = filtered.filter((request) => request.id === scopedProjectId);
+      }
       setRequests(filtered);
+      if (scopedProjectId) {
+        setActiveRequestId(scopedProjectId);
+      }
     };
     sync();
     return subscribeRequests(sync);
-  }, [audience]);
+  }, [audience, scopedProjectId]);
 
   useEffect(() => {
     return subscribeOffers(() => {
@@ -73,7 +84,9 @@ export function RequestsOutboxPanel({
   }, []);
 
   const selectedRequestId =
-    activeRequestId && requests.some((request) => request.id === activeRequestId)
+    scopedProjectId && requests.some((request) => request.id === scopedProjectId)
+      ? scopedProjectId
+      : activeRequestId && requests.some((request) => request.id === activeRequestId)
       ? activeRequestId
       : requests[0]?.id || null;
 
@@ -111,117 +124,141 @@ export function RequestsOutboxPanel({
   };
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[360px_1fr]">
-      <RequestConversationsSidebar
-        requests={requests}
-        selectedRequestId={selectedRequestId}
-        actorRole={actorRole}
-        onSelectRequest={setActiveRequestId}
-        title={
-          mode === "documents"
-            ? "Dokument · Inkorg"
-            : mode === "overview"
-              ? "Förfrågningar"
-              : "Meddelanden"
-        }
-      />
+    <section className={isProjectScoped ? "space-y-4" : "grid gap-6 xl:grid-cols-[360px_1fr]"}>
+      {!isProjectScoped && (
+        <RequestConversationsSidebar
+          requests={requests}
+          selectedRequestId={selectedRequestId}
+          actorRole={actorRole}
+          onSelectRequest={setActiveRequestId}
+          title={
+            mode === "documents"
+              ? "Dokument · Inkorg"
+              : mode === "overview"
+                ? "Förfrågningar"
+                : "Meddelanden"
+          }
+        />
+      )}
 
       {selectedRequest && (
         <main className="space-y-4">
+          {isProjectScoped && (
+            <div className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">
+                Aktivt projekt
+              </p>
+              <p className="text-sm font-semibold text-[#2A2520]">
+                Visar endast innehåll för {selectedRequest.title}
+              </p>
+              <p className="text-xs text-[#6B5A47]">
+                Byt projekt i vänstermenyn om du vill se en annan förfrågan.
+              </p>
+            </div>
+          )}
           {mode === "overview" && (
-            <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-bold text-[#2A2520]">{selectedRequest.title}</h3>
-              <p className="mt-1 text-sm text-[#6B5A47]">
-                {selectedRequest.location} · {statusLabel(selectedRequest.status)} · Förfrågan-ID:{" "}
-                <span className="font-mono">{selectedRequest.id}</span>
-              </p>
-              <p className="mt-2 text-sm text-[#766B60]">
-                Välj nästa steg i projektflödet. Du kan fortsätta dialogen, granska dokument eller följa tidslinjen.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href={roleRoutes.messagesIndex({ requestId: selectedRequest.id })}
-                  className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                >
-                  Öppna meddelanden
-                </Link>
-                <Link
-                  href={roleRoutes.documentsIndex({ requestId: selectedRequest.id })}
-                  className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                >
-                  Öppna dokumentöversikt
-                </Link>
-                <Link
-                  href={roleRoutes.timelineIndex({ projectId: selectedRequest.id })}
-                  className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                >
-                  Öppna tidslinje
-                </Link>
-              </div>
-
-              {audience === "privat" && (
-                <div className="mt-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">
-                        Offerter
-                      </p>
-                      <p className="text-sm text-[#6B5A47]">
-                        Kundvy med kostnadsanalys, kategorier, kostnadsdrivare och jämförelse.
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-[#D9D1C6] bg-white px-2.5 py-1 text-xs font-semibold text-[#6B5A47]">
-                      {selectedRequestOffers.length} offert{selectedRequestOffers.length === 1 ? "" : "er"}
-                    </span>
-                  </div>
-
-                  {selectedRequestOffers.length === 0 ? (
-                    <p className="mt-3 rounded-xl border border-dashed border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#6B5A47]">
-                      Ingen offert registrerad ännu för denna förfrågan.
-                    </p>
-                  ) : (
-                    <div className="mt-3 space-y-2">
-                      {selectedRequestOffers.map((offer) => (
-                        <div
-                          key={offer.id}
-                          className="grid gap-2 rounded-xl border border-[#E8E3DC] bg-white p-3 md:grid-cols-[1fr_auto_auto]"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-[#2A2520]">
-                              {offer.contractorId}
-                            </p>
-                            <p className="mt-0.5 text-xs text-[#6B5A47]">
-                              {offerStatusLabel(offer.status)} · v{offer.version} · {offer.lineItems.length} poster
-                            </p>
-                          </div>
-                          <div className="self-center text-right">
-                            <p className="text-xs uppercase tracking-wide text-[#8C7860]">Ex moms</p>
-                            <p className="text-sm font-bold text-[#2A2520]">{formatSek(offer.totals.exVat)}</p>
-                          </div>
-                          <div className="self-center">
-                            <Link
-                              href={routes.privatperson.offerDetail({
-                                offerId: offer.id,
-                                requestId: selectedRequest.id,
-                              })}
-                              className="inline-flex rounded-lg border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                            >
-                              Öppna kundvy
-                            </Link>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {selectedRequestOffers.length > 1 && (
-                    <p className="mt-2 text-xs text-[#6B5A47]">
-                      Jämförelse aktiveras automatiskt i kundvyn eftersom flera offerter finns.
-                    </p>
-                  )}
+            <>
+              <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+                <h3 className="text-lg font-bold text-[#2A2520]">{selectedRequest.title}</h3>
+                <p className="mt-1 text-sm text-[#6B5A47]">
+                  {selectedRequest.location} · {statusLabel(selectedRequest.status)} · Förfrågan-ID:{" "}
+                  <span className="font-mono">{selectedRequest.id}</span>
+                </p>
+                <p className="mt-2 text-sm text-[#766B60]">
+                  Välj nästa steg i projektflödet. Du kan fortsätta dialogen, granska dokument eller följa tidslinjen.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    href={roleRoutes.messagesIndex({ requestId: selectedRequest.id })}
+                    className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                  >
+                    Öppna meddelanden
+                  </Link>
+                  <Link
+                    href={roleRoutes.documentsIndex({ requestId: selectedRequest.id })}
+                    className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                  >
+                    Öppna dokumentöversikt
+                  </Link>
+                  <Link
+                    href={roleRoutes.timelineIndex({ projectId: selectedRequest.id })}
+                    className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                  >
+                    Öppna tidslinje
+                  </Link>
                 </div>
-              )}
-            </article>
+
+                {audience === "privat" && (
+                  <div className="mt-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">
+                          Offerter
+                        </p>
+                        <p className="text-sm text-[#6B5A47]">
+                          Kundvy med kostnadsanalys, kategorier, kostnadsdrivare och jämförelse.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-[#D9D1C6] bg-white px-2.5 py-1 text-xs font-semibold text-[#6B5A47]">
+                        {selectedRequestOffers.length} offert{selectedRequestOffers.length === 1 ? "" : "er"}
+                      </span>
+                    </div>
+
+                    {selectedRequestOffers.length === 0 ? (
+                      <p className="mt-3 rounded-xl border border-dashed border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#6B5A47]">
+                        Ingen offert registrerad ännu för denna förfrågan.
+                      </p>
+                    ) : (
+                      <div className="mt-3 space-y-2">
+                        {selectedRequestOffers.map((offer) => (
+                          <div
+                            key={offer.id}
+                            className="grid gap-2 rounded-xl border border-[#E8E3DC] bg-white p-3 md:grid-cols-[1fr_auto_auto]"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-[#2A2520]">
+                                {offer.contractorId}
+                              </p>
+                              <p className="mt-0.5 text-xs text-[#6B5A47]">
+                                {offerStatusLabel(offer.status)} · v{offer.version} · {offer.lineItems.length} poster
+                              </p>
+                            </div>
+                            <div className="self-center text-right">
+                              <p className="text-xs uppercase tracking-wide text-[#8C7860]">Ex moms</p>
+                              <p className="text-sm font-bold text-[#2A2520]">{formatSek(offer.totals.exVat)}</p>
+                            </div>
+                            <div className="self-center">
+                              <Link
+                                href={routes.privatperson.offerDetail({
+                                  offerId: offer.id,
+                                  requestId: selectedRequest.id,
+                                })}
+                                className="inline-flex rounded-lg border border-[#D2C5B5] bg-white px-3 py-2 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                              >
+                                Öppna kundvy
+                              </Link>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {selectedRequestOffers.length > 1 && (
+                      <p className="mt-2 text-xs text-[#6B5A47]">
+                        Jämförelse aktiveras automatiskt i kundvyn eftersom flera offerter finns.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </article>
+
+              <ChangeOrdersPanel
+                projectId={selectedRequest.id}
+                actorRole="bestallare"
+                request={selectedRequest}
+                title="ÄTA (48h) · Beslutsyta"
+              />
+            </>
           )}
 
           <article className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">

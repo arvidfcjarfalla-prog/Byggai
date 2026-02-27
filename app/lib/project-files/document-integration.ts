@@ -110,3 +110,36 @@ export async function shareDocumentPdfToRecipient(input: {
     senderLabel: input.senderLabel,
   });
 }
+
+export async function publishSignedDocumentPdfForSignerWorkspace(input: {
+  document: PlatformDocument;
+  request: PlatformRequest | null;
+  signerLabel: string;
+  signerRole: "brf" | "privatperson";
+  signerWorkspaceId: "brf" | "privat";
+}): Promise<ProjectFile> {
+  const generated = await generateAndStoreDocumentPdf({
+    document: input.document,
+    request: input.request,
+    createdBy: input.signerLabel,
+    senderRole: input.signerRole,
+    senderWorkspaceId: input.signerWorkspaceId,
+  });
+
+  const folder = folderFromDocumentType(input.document.type);
+  const workspaceFiles = await listFiles(input.document.requestId, folder, undefined, input.signerWorkspaceId);
+  const staleRecipientCopies = workspaceFiles.filter(
+    (file) =>
+      file.id !== generated.id &&
+      file.sourceId === input.document.id &&
+      file.version === input.document.version &&
+      file.mimeType === "application/pdf" &&
+      file.recipientWorkspaceId === input.signerWorkspaceId
+  );
+
+  for (const stale of staleRecipientCopies) {
+    await deleteFile(input.document.requestId, stale.id);
+  }
+
+  return generated;
+}

@@ -69,6 +69,7 @@ export interface DocumentPromptPayload {
     paymentPlan?: string;
     terms?: string;
     reservations?: string;
+    ateDescription?: string;
   };
   requestContext: {
     id: string;
@@ -104,6 +105,8 @@ export interface PlatformDocument {
   updatedAt: string;
   sentAt?: string;
   acceptedAt?: string;
+  acceptedByRole?: "brf" | "privatperson";
+  acceptedByLabel?: string;
   rejectedAt?: string;
   createdByRole: "entreprenor" | "brf" | "privatperson";
   createdByLabel: string;
@@ -338,6 +341,10 @@ function normalizePromptPayload(raw: unknown): DocumentPromptPayload | undefined
           typeof raw.entrepreneurInputs.reservations === "string"
             ? raw.entrepreneurInputs.reservations
             : undefined,
+        ateDescription:
+          typeof raw.entrepreneurInputs.ateDescription === "string"
+            ? raw.entrepreneurInputs.ateDescription
+            : undefined,
       }
     : {};
 
@@ -455,15 +462,28 @@ function normalizeDocument(raw: unknown): PlatformDocument | null {
   let sentAt = normalizeOptionalIso(raw.sentAt);
   let acceptedAt = normalizeOptionalIso(raw.acceptedAt);
   let rejectedAt = normalizeOptionalIso(raw.rejectedAt);
+  let acceptedByRole: PlatformDocument["acceptedByRole"] =
+    raw.acceptedByRole === "brf" || raw.acceptedByRole === "privatperson" ? raw.acceptedByRole : undefined;
+  let acceptedByLabel =
+    typeof raw.acceptedByLabel === "string" && raw.acceptedByLabel.trim().length > 0
+      ? raw.acceptedByLabel.trim()
+      : undefined;
 
   if (status === "sent" && !sentAt) {
     sentAt = updatedAt;
+    acceptedByRole = undefined;
+    acceptedByLabel = undefined;
   } else if (status === "accepted") {
     if (!sentAt) sentAt = createdAt;
     if (!acceptedAt) acceptedAt = updatedAt;
   } else if (status === "rejected") {
     if (!sentAt) sentAt = createdAt;
     if (!rejectedAt) rejectedAt = updatedAt;
+    acceptedByRole = undefined;
+    acceptedByLabel = undefined;
+  } else if (status === "draft" || status === "superseded") {
+    acceptedByRole = undefined;
+    acceptedByLabel = undefined;
   }
 
   return {
@@ -478,6 +498,8 @@ function normalizeDocument(raw: unknown): PlatformDocument | null {
     updatedAt,
     sentAt,
     acceptedAt,
+    acceptedByRole,
+    acceptedByLabel,
     rejectedAt,
     createdByRole:
       raw.createdByRole === "entreprenor" || raw.createdByRole === "brf" || raw.createdByRole === "privatperson"
@@ -518,16 +540,22 @@ function applyStatusTimestamps(
 ): PlatformDocument {
   let sentAt = document.sentAt ?? previous?.sentAt;
   let acceptedAt = document.acceptedAt ?? previous?.acceptedAt;
+  let acceptedByRole = document.acceptedByRole ?? previous?.acceptedByRole;
+  let acceptedByLabel = document.acceptedByLabel ?? previous?.acceptedByLabel;
   let rejectedAt = document.rejectedAt ?? previous?.rejectedAt;
 
   if (document.status === "draft") {
     acceptedAt = undefined;
+    acceptedByRole = undefined;
+    acceptedByLabel = undefined;
     rejectedAt = undefined;
   }
 
   if (document.status === "sent") {
     if (!sentAt) sentAt = document.updatedAt;
     acceptedAt = undefined;
+    acceptedByRole = undefined;
+    acceptedByLabel = undefined;
     rejectedAt = undefined;
   }
 
@@ -541,12 +569,16 @@ function applyStatusTimestamps(
     if (!sentAt) sentAt = previous?.sentAt ?? document.createdAt;
     if (!rejectedAt) rejectedAt = document.updatedAt;
     acceptedAt = undefined;
+    acceptedByRole = undefined;
+    acceptedByLabel = undefined;
   }
 
   return {
     ...document,
     sentAt,
     acceptedAt,
+    acceptedByRole,
+    acceptedByLabel,
     rejectedAt,
   };
 }
@@ -894,7 +926,7 @@ function ateSections(request: PlatformRequest): DocumentSection[] {
     {
       id: "kov-reference",
       title: "Referens och parter",
-      description: "Grundmall enligt KOV: Ändringar och tilläggsarbeten.",
+      description: "Grundmall enligt Konsumentverket: Ändringar och tilläggsarbeten (KOV).",
       enabled: true,
       fields: [
         { id: "date", label: "Datum", type: "date", value: today },
@@ -930,7 +962,6 @@ function ateSections(request: PlatformRequest): DocumentSection[] {
           ],
         },
       ],
-      items: buildScopeItems(request),
     },
     {
       id: "kov-pricing",
@@ -962,9 +993,6 @@ function ateSections(request: PlatformRequest): DocumentSection[] {
           ],
         },
         { id: "price-comment", label: "Pris-kommentar", type: "textarea", value: "" },
-      ],
-      items: [
-        { id: "price-row-1", label: "Åtgärd", quantity: 1, unitPrice: 0, total: 0 },
       ],
     },
     {
@@ -1079,7 +1107,8 @@ export function createDocumentFromTemplate(
   const sectionByType =
     type === "contract" ? contractSections(request) : type === "ate" ? ateSections(request) : quoteSections(request);
 
-  const titlePrefix = type === "quote" ? "Offert" : type === "contract" ? "Avtal" : "ÄTA";
+  const titlePrefix =
+    type === "quote" ? "Offert" : type === "contract" ? "Avtal" : "ÄTA (Konsumentverket mall)";
 
   return {
     id,

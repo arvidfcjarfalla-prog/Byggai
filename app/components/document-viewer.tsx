@@ -29,22 +29,45 @@ function blobPartFromBytes(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
+function formatDateTimeLabel(value: string | undefined): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toLocaleString("sv-SE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function DocumentViewer({
   document,
   request,
   backHref,
   backLabel,
   breadcrumbs,
+  approvalAction,
 }: {
   document: PlatformDocument;
   request: PlatformRequest | null;
   backHref: string;
   backLabel: string;
   breadcrumbs?: Crumb[];
+  approvalAction?: {
+    onApprove: () => void | Promise<void>;
+    disabled?: boolean;
+    pending?: boolean;
+    label?: string;
+  };
 }) {
   const [notice, setNotice] = useState<string | null>(null);
   const previewHtml = useMemo(() => renderDocumentToHtml(document, request), [document, request]);
   const [pdfFile, setPdfFile] = useState<ProjectFile | null>(null);
+  const acceptedAtLabel = formatDateTimeLabel(document.acceptedAt);
+  const recipientLabel = document.audience === "brf" ? "BRF" : "privatperson";
+  const acceptedByLabel = document.acceptedByLabel ?? recipientLabel;
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +128,11 @@ export function DocumentViewer({
               {typeLabel(document.type)} · {statusLabel(document.status)} · Version {document.version}
             </p>
             <p className="text-xs text-[#766B60]">Request: {document.requestId} · RefID: {document.refId}</p>
+            {document.status === "accepted" && acceptedAtLabel && (
+              <p className="mt-1 text-xs font-semibold text-[#3F6B3F]">
+                Signerat/godkänt av {acceptedByLabel} {acceptedAtLabel}
+              </p>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -120,6 +148,16 @@ export function DocumentViewer({
             >
               {backLabel}
             </Link>
+            {approvalAction && (
+              <button
+                type="button"
+                onClick={() => void approvalAction.onApprove()}
+                disabled={approvalAction.disabled || approvalAction.pending}
+                className="rounded-xl border border-[#A9C19F] bg-[#EDF7E8] px-3 py-2 text-xs font-semibold text-[#355B35] hover:bg-[#E2F0DB] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {approvalAction.pending ? "Signerar..." : approvalAction.label ?? "Signera"}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => window.print()}

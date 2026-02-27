@@ -5,8 +5,15 @@ import {
   type ProjectSnapshot,
   type ProjectSnapshotFile,
 } from "./project-snapshot";
+import { listDocumentsByRequest } from "./documents-store";
 import { ensureRegisteredRefId } from "./refid/registry";
 import { validateRefId } from "./refid/validate";
+import {
+  transitionProjectStatus,
+  type ProjectLifecycleEvent,
+  type ProjectStatus,
+  type ProjectTransitionAuditEntry,
+} from "./state-machine";
 
 export type RequestAudience = "brf" | "privat";
 export type RequestStatus = "draft" | "sent" | "received";
@@ -26,6 +33,7 @@ export interface ProcurementAction {
   estimatedPriceSek: number;
   emissionsKgCo2e: number;
   source?: "ai" | "local";
+  customAction?: boolean;
   details?: string;
   rawRow?: string;
   sourceSheet?: string;
@@ -77,6 +85,30 @@ export interface RequestScopeItem {
   details?: string;
 }
 
+export interface RequestProcurementScopeSnapshotItem {
+  actionId: string;
+  title: string;
+  category?: string;
+  estimatedPriceSek?: number;
+  emissionsKgCo2e?: number;
+  plannedYear?: number;
+  status?: string;
+  quantity?: number | null;
+  unit?: string;
+  standardLevel?: "Bas" | "Standard" | "Premium";
+  additionalRequirements?: string;
+  isOption?: boolean;
+  templateId?: string;
+  templateVersionId?: string;
+}
+
+export interface RequestProcurementWizardMeta {
+  mallVersionId?: string;
+  sentAt?: string;
+  originalScope?: RequestProcurementScopeSnapshotItem[];
+  adjustedScope?: RequestProcurementScopeSnapshotItem[];
+}
+
 export interface RequestRecipient {
   id: string;
   companyName: string;
@@ -112,11 +144,14 @@ export interface PlatformRequest {
   recipients?: RequestRecipient[];
   sharingApproved: boolean;
   sharingApprovedAt?: string;
+  projectStatus?: ProjectStatus;
+  statusAudit?: ProjectTransitionAuditEntry[];
 
   // Backwards compatibility for already-built views.
   actions?: ProcurementAction[];
   documentationLevel?: string;
   riskProfile?: "Låg" | "Medel" | "Hög";
+  procurementWizard?: RequestProcurementWizardMeta;
 }
 
 export const REQUESTS_STORAGE_KEY = "byggplattformen-procurement-requests";
@@ -129,6 +164,70 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function normalizeStatus(raw: unknown): RequestStatus {
   if (raw === "draft" || raw === "received") return raw;
   return "sent";
+}
+
+function isProjectStatus(raw: unknown): raw is ProjectStatus {
+  return (
+    raw === "DRAFT" ||
+    raw === "PUBLISHED" ||
+    raw === "TENDERING" ||
+    raw === "OFFERS_RECEIVED" ||
+    raw === "NEGOTIATION" ||
+    raw === "CONTRACTED" ||
+    raw === "IN_PROGRESS" ||
+    raw === "COMPLETED_PENDING_INSPECTION" ||
+    raw === "CLOSED" ||
+    raw === "CANCELLED" ||
+    raw === "EXPIRED"
+  );
+}
+
+function legacyRequestStatusToProjectStatusLocal(status: RequestStatus): ProjectStatus {
+  if (status === "draft") return "DRAFT";
+  if (status === "received") return "OFFERS_RECEIVED";
+  return "TENDERING";
+}
+
+function projectStatusToLegacyRequestStatusLocal(status: ProjectStatus): RequestStatus {
+  if (status === "DRAFT") return "draft";
+  if (status === "OFFERS_RECEIVED" || status === "NEGOTIATION") return "received";
+  return "sent";
+}
+
+function normalizeStatusAudit(raw: unknown): ProjectTransitionAuditEntry[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const entries = raw
+    .map((item) => {
+      if (!isObject(item)) return null;
+      if (
+        item.kind !== "project_status_transition" ||
+        typeof item.projectId !== "string" ||
+        typeof item.event !== "string" ||
+        !isProjectStatus(item.fromStatus) ||
+        !isProjectStatus(item.toStatus) ||
+        typeof item.createdAt !== "string"
+      ) {
+        return null;
+      }
+      const entry: ProjectTransitionAuditEntry = {
+        kind: "project_status_transition",
+        projectId: item.projectId,
+        event: item.event as ProjectLifecycleEvent,
+        fromStatus: item.fromStatus,
+        toStatus: item.toStatus,
+        createdAt: item.createdAt,
+        actorRole:
+          item.actorRole === "bestallare" || item.actorRole === "entreprenor" || item.actorRole === "system"
+            ? item.actorRole
+            : "system",
+        actorId: typeof item.actorId === "string" ? item.actorId : undefined,
+        actorLabel: typeof item.actorLabel === "string" ? item.actorLabel : undefined,
+      };
+      return entry;
+    })
+    .filter((entry): entry is ProjectTransitionAuditEntry => entry !== null)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  return entries.length > 0 ? entries : undefined;
 }
 
 function normalizeSharingApproved(raw: unknown): boolean {
@@ -435,6 +534,7 @@ function normalizeActions(rawActions: unknown): ProcurementAction[] {
             ? item.emissionsKgCo2e
             : 0,
         source: item.source === "ai" ? "ai" : "local",
+        customAction: item.customAction === true ? true : undefined,
         details: typeof item.details === "string" ? item.details : undefined,
         rawRow: typeof item.rawRow === "string" ? item.rawRow : undefined,
         sourceSheet: typeof item.sourceSheet === "string" ? item.sourceSheet : undefined,
@@ -667,6 +767,74 @@ function normalizeSnapshot(raw: unknown): ProjectSnapshot | undefined {
   return raw as unknown as ProjectSnapshot;
 }
 
+function normalizeProcurementScopeSnapshotItem(
+  raw: unknown
+): RequestProcurementScopeSnapshotItem | null {
+  if (!isObject(raw)) return null;
+  if (typeof raw.actionId !== "string" || typeof raw.title !== "string") return null;
+  const standardLevel =
+    raw.standardLevel === "Bas" || raw.standardLevel === "Standard" || raw.standardLevel === "Premium"
+      ? raw.standardLevel
+      : undefined;
+  return {
+    actionId: raw.actionId,
+    title: raw.title,
+    category: typeof raw.category === "string" ? raw.category : undefined,
+    estimatedPriceSek:
+      typeof raw.estimatedPriceSek === "number" && Number.isFinite(raw.estimatedPriceSek)
+        ? raw.estimatedPriceSek
+        : undefined,
+    emissionsKgCo2e:
+      typeof raw.emissionsKgCo2e === "number" && Number.isFinite(raw.emissionsKgCo2e)
+        ? raw.emissionsKgCo2e
+        : undefined,
+    plannedYear:
+      typeof raw.plannedYear === "number" && Number.isFinite(raw.plannedYear)
+        ? Math.round(raw.plannedYear)
+        : undefined,
+    status: typeof raw.status === "string" ? raw.status : undefined,
+    quantity:
+      raw.quantity === null
+        ? null
+        : typeof raw.quantity === "number" && Number.isFinite(raw.quantity)
+          ? raw.quantity
+          : undefined,
+    unit: typeof raw.unit === "string" ? raw.unit : undefined,
+    standardLevel,
+    additionalRequirements:
+      typeof raw.additionalRequirements === "string" ? raw.additionalRequirements : undefined,
+    isOption: typeof raw.isOption === "boolean" ? raw.isOption : undefined,
+    templateId: typeof raw.templateId === "string" ? raw.templateId : undefined,
+    templateVersionId: typeof raw.templateVersionId === "string" ? raw.templateVersionId : undefined,
+  };
+}
+
+function normalizeProcurementWizardMeta(raw: unknown): RequestProcurementWizardMeta | undefined {
+  if (!isObject(raw)) return undefined;
+  const originalScope = Array.isArray(raw.originalScope)
+    ? raw.originalScope
+        .map((entry) => normalizeProcurementScopeSnapshotItem(entry))
+        .filter((entry): entry is RequestProcurementScopeSnapshotItem => entry !== null)
+    : undefined;
+  const adjustedScope = Array.isArray(raw.adjustedScope)
+    ? raw.adjustedScope
+        .map((entry) => normalizeProcurementScopeSnapshotItem(entry))
+        .filter((entry): entry is RequestProcurementScopeSnapshotItem => entry !== null)
+    : undefined;
+
+  const normalized: RequestProcurementWizardMeta = {
+    mallVersionId: typeof raw.mallVersionId === "string" ? raw.mallVersionId : undefined,
+    sentAt: typeof raw.sentAt === "string" ? raw.sentAt : undefined,
+    originalScope,
+    adjustedScope,
+  };
+
+  if (!normalized.mallVersionId && !normalized.sentAt && !originalScope?.length && !adjustedScope?.length) {
+    return undefined;
+  }
+  return normalized;
+}
+
 function normalizeRequest(rawInput: unknown): PlatformRequest | null {
   if (!isObject(rawInput)) return null;
 
@@ -725,8 +893,13 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
   });
 
   const status = normalizeStatus(rawInput.status);
+  const projectStatus =
+    isProjectStatus(rawInput.projectStatus)
+      ? rawInput.projectStatus
+      : legacyRequestStatusToProjectStatusLocal(status);
   const sharingApproved = normalizeSharingApproved(rawInput.sharingApproved);
   const sharingApprovedAt = normalizeSharingApprovedAt(rawInput.sharingApprovedAt, sharingApproved);
+  const statusAudit = normalizeStatusAudit(rawInput.statusAudit);
 
   const documentationLevel =
     typeof rawInput.documentationLevel === "string" && rawInput.documentationLevel.trim().length > 0
@@ -747,6 +920,7 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
     createdAt,
     audience,
     status,
+    projectStatus,
     requestType: rawInput.requestType === "offer_request_v1" ? "offer_request_v1" : "offer_request_v1",
     title,
     location,
@@ -765,9 +939,11 @@ function normalizeRequest(rawInput: unknown): PlatformRequest | null {
     recipients: recipients.length > 0 ? recipients : undefined,
     sharingApproved,
     sharingApprovedAt,
+    statusAudit,
     actions,
     documentationLevel,
     riskProfile,
+    procurementWizard: normalizeProcurementWizardMeta(rawInput.procurementWizard),
   };
 
   return request;
@@ -816,8 +992,15 @@ export function saveRequest(request: PlatformRequest): PlatformRequest[] {
   const normalized = normalizeRequest(request);
   if (!normalized) return listRequests();
 
-  const existing = listRequests().filter((item) => item.id !== normalized.id);
-  const next = [normalized, ...existing];
+  const requestWithLegacyStatus: PlatformRequest = {
+    ...normalized,
+    status: projectStatusToLegacyRequestStatusLocal(
+      normalized.projectStatus ?? legacyRequestStatusToProjectStatusLocal(normalized.status)
+    ),
+  };
+
+  const existing = listRequests().filter((item) => item.id !== requestWithLegacyStatus.id);
+  const next = [requestWithLegacyStatus, ...existing];
   writeAllRequests(next);
   return next;
 }
@@ -859,4 +1042,252 @@ export function setRequestPropertySharingApproval(
 
   const updated = replaceRequests(next);
   return updated.find((request) => request.id === requestId) || null;
+}
+
+export function renameRequestProjectTitle(
+  requestId: string,
+  nextTitle: string
+): PlatformRequest | null {
+  const trimmed = nextTitle.trim();
+  if (trimmed.length === 0) return null;
+
+  return updateRequestInStore(requestId, (request) => ({
+    ...request,
+    title: trimmed,
+  }));
+}
+
+function matchRecipientForContractor(
+  request: PlatformRequest,
+  contractorIdentifier: string
+): RequestRecipient | null {
+  const recipients = request.recipients ?? [];
+  if (recipients.length === 0) return null;
+  const normalized = contractorIdentifier.trim().toLowerCase();
+  if (!normalized) return null;
+  return (
+    recipients.find((recipient) => recipient.id.toLowerCase() === normalized) ??
+    recipients.find((recipient) => recipient.email?.trim().toLowerCase() === normalized) ??
+    null
+  );
+}
+
+function updateRequestInStore(
+  requestId: string,
+  updater: (request: PlatformRequest) => PlatformRequest
+): PlatformRequest | null {
+  const all = listRequests();
+  if (all.length === 0) return null;
+
+  let changed = false;
+  let updatedRequestId: string | null = null;
+  const next = all.map((request) => {
+    if (request.id !== requestId) return request;
+    const nextRequest = updater(request);
+    if (nextRequest !== request) {
+      changed = true;
+      updatedRequestId = nextRequest.id;
+      return nextRequest;
+    }
+    return request;
+  });
+
+  if (!changed) return null;
+  const updated = replaceRequests(next);
+  return updated.find((request) => request.id === (updatedRequestId ?? requestId)) ?? null;
+}
+
+export function transitionRequestProjectStatus(input: {
+  requestId: string;
+  event: ProjectLifecycleEvent;
+  actor: {
+    role: "bestallare" | "entreprenor" | "system";
+    id?: string;
+    label?: string;
+  };
+  context?: Partial<{
+    requiredFieldsComplete: boolean;
+    attachmentsCount: number;
+    minAttachmentsRequired: number;
+    recipientCount: number;
+    offerCount: number;
+    selectedOfferId: string | null;
+    buyerAcceptedOffer: boolean;
+    contractorSignedContract: boolean;
+    startDate: string | null;
+    inspectionPassed: boolean;
+    finalPaymentMarkedPaid: boolean;
+  }>;
+  now?: string;
+}): PlatformRequest | null {
+  return updateRequestInStore(input.requestId, (request) => {
+    const currentProjectStatus =
+      request.projectStatus ?? legacyRequestStatusToProjectStatusLocal(request.status);
+
+    const transition = transitionProjectStatus({
+      context: {
+        projectId: request.id,
+        currentStatus: currentProjectStatus,
+        requiredFieldsComplete:
+          input.context?.requiredFieldsComplete ?? request.missingInfo.length === 0,
+        attachmentsCount: input.context?.attachmentsCount ?? (request.files?.length ?? 0),
+        minAttachmentsRequired: input.context?.minAttachmentsRequired ?? 1,
+        recipientCount: input.context?.recipientCount ?? (request.recipients?.length ?? 0),
+        offerCount: input.context?.offerCount,
+        selectedOfferId: input.context?.selectedOfferId,
+        buyerAcceptedOffer: input.context?.buyerAcceptedOffer,
+        contractorSignedContract: input.context?.contractorSignedContract,
+        startDate: input.context?.startDate ?? null,
+        inspectionPassed: input.context?.inspectionPassed,
+        finalPaymentMarkedPaid: input.context?.finalPaymentMarkedPaid,
+      },
+      event: input.event,
+      actor: input.actor,
+      now: input.now,
+    });
+
+    if (!transition.ok) {
+      return request;
+    }
+
+    const statusAudit = [...(request.statusAudit ?? []), transition.audit].slice(-100);
+    return {
+      ...request,
+      projectStatus: transition.nextStatus,
+      status: projectStatusToLegacyRequestStatusLocal(transition.nextStatus),
+      statusAudit,
+    };
+  });
+}
+
+export function markRequestRecipientRespondedByContractor(
+  requestId: string,
+  contractorIdentifier: string,
+  options?: {
+    actorLabel?: string;
+    offerCount?: number;
+  }
+): PlatformRequest | null {
+  const updated = updateRequestInStore(requestId, (request) => {
+    const recipient = matchRecipientForContractor(request, contractorIdentifier);
+    if (!recipient) return request;
+
+    const recipients = (request.recipients ?? []).map((entry) =>
+      entry.id === recipient.id
+        ? {
+            ...entry,
+            status: "responded" as const,
+          }
+        : entry
+    );
+
+    return {
+      ...request,
+      recipients,
+    };
+  });
+
+  if (!updated) return null;
+
+  return (
+    transitionRequestProjectStatus({
+      requestId,
+      event: "SUBMIT_OFFER",
+      actor: {
+        role: "entreprenor",
+        id: contractorIdentifier,
+        label: options?.actorLabel ?? contractorIdentifier,
+      },
+      context: {
+        offerCount: options?.offerCount ?? 1,
+      },
+    }) ?? updated
+  );
+}
+
+export function markRequestOfferAccepted(requestId: string, selectedOfferId?: string | null): PlatformRequest | null {
+  return (
+    transitionRequestProjectStatus({
+      requestId,
+      event: "ACCEPT_OFFER_AND_START_CONTRACT",
+      actor: { role: "bestallare", label: "Beställare" },
+      context: {
+        selectedOfferId: selectedOfferId ?? "selected-offer",
+        buyerAcceptedOffer: true,
+      },
+    }) ??
+    null
+  );
+}
+
+export function markRequestStartedFromSignedQuoteDocument(
+  requestId: string,
+  options?: {
+    actorLabel?: string;
+    startDate?: string;
+  }
+): PlatformRequest | null {
+  const acceptedRequest = markRequestOfferAccepted(requestId) ?? listRequests().find((request) => request.id === requestId) ?? null;
+  if (!acceptedRequest) return null;
+
+  const currentProjectStatus =
+    acceptedRequest.projectStatus ?? legacyRequestStatusToProjectStatusLocal(acceptedRequest.status);
+  if (currentProjectStatus === "IN_PROGRESS") {
+    return acceptedRequest;
+  }
+
+  if (currentProjectStatus !== "CONTRACTED") {
+    return acceptedRequest;
+  }
+
+  return (
+    transitionRequestProjectStatus({
+      requestId,
+      event: "CONFIRM_START",
+      actor: { role: "bestallare", label: options?.actorLabel ?? "Beställare (dokumentsignering)" },
+      context: {
+        startDate: options?.startDate ?? new Date().toISOString().slice(0, 10),
+      },
+    }) ?? acceptedRequest
+  );
+}
+
+export function backfillRequestStartedFromAcceptedCustomerDocument(
+  requestId: string,
+  options?: {
+    actorLabel?: string;
+    startDate?: string;
+  }
+): PlatformRequest | null {
+  const request = listRequests().find((entry) => entry.id === requestId) ?? null;
+  if (!request) return null;
+
+  const currentProjectStatus =
+    request.projectStatus ?? legacyRequestStatusToProjectStatusLocal(request.status);
+
+  if (
+    currentProjectStatus === "IN_PROGRESS" ||
+    currentProjectStatus === "COMPLETED_PENDING_INSPECTION" ||
+    currentProjectStatus === "CLOSED" ||
+    currentProjectStatus === "CANCELLED"
+  ) {
+    return request;
+  }
+
+  const hasAcceptedCommercialDocument = listDocumentsByRequest(requestId).some(
+    (document) =>
+      (document.type === "quote" || document.type === "contract") && document.status === "accepted"
+  );
+  if (!hasAcceptedCommercialDocument) {
+    return request;
+  }
+
+  return markRequestStartedFromSignedQuoteDocument(requestId, {
+    actorLabel: options?.actorLabel ?? "System (signeringssynk)",
+    startDate: options?.startDate,
+  });
+}
+
+export function markRequestOfferRejected(requestId: string): PlatformRequest | null {
+  return updateRequestInStore(requestId, (request) => request);
 }

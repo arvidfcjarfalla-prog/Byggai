@@ -48,6 +48,11 @@ export function suggestDocumentSections(
     ];
   }
 
+  if (type === "ate") {
+    // ÄTA ska utgå från KOV-mallen utan generiska AI-sektioner i MVP.
+    return [];
+  }
+
   return [defaultSection(`AI: ${type.toUpperCase()}-forslag`)];
 }
 

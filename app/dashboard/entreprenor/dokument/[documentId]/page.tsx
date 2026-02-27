@@ -13,6 +13,8 @@ import {
   saveDocument,
   subscribeDocuments,
   type DocumentField,
+  type DocumentSection,
+  type DocumentSectionItem,
   type PlatformDocument,
 } from "../../../../lib/documents-store";
 import { buildEntreprenorOfferFlowSteps } from "../../../../lib/offers/flow";
@@ -41,6 +43,19 @@ function statusLabel(status: PlatformDocument["status"]): string {
   return "Utkast";
 }
 
+function formatDateTimeLabel(value: string | undefined): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toLocaleString("sv-SE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function hasFieldValue(value: DocumentField["value"]): boolean {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) && value !== 0;
@@ -50,6 +65,40 @@ function hasFieldValue(value: DocumentField["value"]): boolean {
 function sameStringArray(left: string[], right: string[]): boolean {
   if (left.length !== right.length) return false;
   return left.every((entry, index) => entry === right[index]);
+}
+
+function createEmptyDocumentItem(): DocumentSectionItem {
+  const unique = `${Date.now()}-${Math.round(Math.random() * 10000)}`;
+  return {
+    id: `item-${unique}`,
+    label: "",
+    description: "",
+    value: "",
+  };
+}
+
+function createCustomTextSection(): DocumentSection {
+  const unique = `${Date.now()}-${Math.round(Math.random() * 10000)}`;
+  return {
+    id: `custom-section-${unique}`,
+    title: "Egen punkt",
+    description: "Valfri text som läggs till i dokumentet.",
+    enabled: true,
+    fields: [
+      {
+        id: `custom-title-${unique}`,
+        label: "Rubrik",
+        type: "text",
+        value: "",
+      },
+      {
+        id: `custom-body-${unique}`,
+        label: "Innehåll",
+        type: "textarea",
+        value: "",
+      },
+    ],
+  };
 }
 
 function getContractorOfferForUser(offers: Offer[], userId?: string, userEmail?: string): Offer | null {
@@ -197,7 +246,7 @@ export default function EntreprenorDocumentEditorPage() {
   const flowSteps = useMemo(() => {
     if (!document || document.type !== "quote") return [];
     return buildEntreprenorOfferFlowSteps({
-      activeStepId: "preview",
+      activeStepId: "offer_document",
       requestId: document.requestId,
       offerId: currentContractorOffer?.id ?? null,
       previewDocumentId: document.id,
@@ -220,6 +269,8 @@ export default function EntreprenorDocumentEditorPage() {
       </DashboardShell>
     );
   }
+
+  const isAtaDocument = document.type === "ate";
 
   const setFieldValue = (sectionId: string, fieldId: string, nextValue: string | number | boolean) => {
     setDocument((current) => {
@@ -258,6 +309,29 @@ export default function EntreprenorDocumentEditorPage() {
         ? current.filter((id) => id !== sectionId)
         : [...current, sectionId]
     );
+  };
+
+  const addCustomSection = () => {
+    const nextSection = createCustomTextSection();
+    setDocument((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        sections: [...current.sections, nextSection],
+      };
+    });
+    setExpandedSectionIds((current) => Array.from(new Set([...current, nextSection.id])));
+  };
+
+  const removeSection = (sectionId: string) => {
+    setDocument((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        sections: current.sections.filter((section) => section.id !== sectionId),
+      };
+    });
+    setExpandedSectionIds((current) => current.filter((id) => id !== sectionId));
   };
 
   const expandAllSections = () => {
@@ -328,6 +402,40 @@ export default function EntreprenorDocumentEditorPage() {
         }),
       };
     });
+  };
+
+  const addItemRow = (sectionId: string) => {
+    setDocument((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        sections: current.sections.map((section) => {
+          if (section.id !== sectionId) return section;
+          return {
+            ...section,
+            items: [...(section.items ?? []), createEmptyDocumentItem()],
+          };
+        }),
+      };
+    });
+    setExpandedSectionIds((current) => Array.from(new Set([...current, sectionId])));
+  };
+
+  const removeItemRow = (sectionId: string, itemId: string) => {
+    setDocument((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        sections: current.sections.map((section) => {
+          if (section.id !== sectionId || !section.items) return section;
+          return {
+            ...section,
+            items: section.items.filter((item) => item.id !== itemId),
+          };
+        }),
+      };
+    });
+    setExpandedItemKeys((current) => current.filter((key) => key !== `${sectionId}:${itemId}`));
   };
 
   const toggleItemExpanded = (sectionId: string, itemId: string) => {
@@ -433,6 +541,9 @@ export default function EntreprenorDocumentEditorPage() {
 
   const contextRequestId = searchParams.get("requestId") ?? document.requestId;
   const documentsIndexHref = routes.entreprenor.documentsIndex({ requestId: contextRequestId });
+  const acceptedAtLabel = formatDateTimeLabel(document.acceptedAt);
+  const acceptedRecipientLabel = document.audience === "brf" ? "BRF" : "privatperson";
+  const acceptedByLabel = document.acceptedByLabel ?? acceptedRecipientLabel;
 
   return (
     <DashboardShell
@@ -464,6 +575,17 @@ export default function EntreprenorDocumentEditorPage() {
           Till dokumentöversikt
         </Link>
       </section>
+
+      {document.status === "accepted" && acceptedAtLabel && (
+        <section className="mb-4 rounded-2xl border border-[#D8E8CF] bg-[#F4FBEE] px-4 py-3 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#5F7A4D]">
+            Kundsignering registrerad
+          </p>
+          <p className="mt-1 text-sm font-semibold text-[#355B35]">
+            {acceptedByLabel} signerade/godkände dokumentet {acceptedAtLabel}
+          </p>
+        </section>
+      )}
 
       <EntreprenorOfferFlowShell
         steps={flowSteps}
@@ -533,6 +655,15 @@ export default function EntreprenorDocumentEditorPage() {
                 Sektioner ({document.sections.length})
               </p>
               <div className="flex items-center gap-2">
+                {isAtaDocument && (
+                  <button
+                    type="button"
+                    onClick={addCustomSection}
+                    className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                  >
+                    Lägg till egen punkt
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={expandAllSections}
@@ -550,11 +681,15 @@ export default function EntreprenorDocumentEditorPage() {
               </div>
             </div>
             {document.sections.map((section) => (
-              <article key={section.id} className="rounded-2xl border border-[#E8E3DC] bg-[#FCFBF8] p-3">
+              <article
+                key={section.id}
+                className={`rounded-2xl border p-3 ${isAtaDocument ? "border-[#E5DED4] bg-white" : "border-[#E8E3DC] bg-[#FCFBF8]"}`}
+              >
                 {(() => {
                   const isExpanded = expandedSectionIds.includes(section.id);
                   const filledFieldCount = section.fields.filter((field) => hasFieldValue(field.value)).length;
                   const itemCount = section.items?.length ?? 0;
+                  const isCustomSection = section.id.startsWith("custom-section-");
 
                   return (
                     <>
@@ -567,15 +702,31 @@ export default function EntreprenorDocumentEditorPage() {
                           <span className="truncate">{section.title}</span>
                           <span className="text-xs text-[#6B5A47]">{isExpanded ? "▲" : "▼"}</span>
                         </button>
-                        <label className="flex shrink-0 items-center gap-1 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47]">
-                          Aktiv
-                          <input
-                            type="checkbox"
-                            checked={section.enabled}
-                            onChange={(event) => setSectionEnabled(section.id, event.target.checked)}
-                          />
-                        </label>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {isCustomSection && (
+                            <button
+                              type="button"
+                              onClick={() => removeSection(section.id)}
+                              className="rounded-lg border border-[#E5CFCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#8A4242] hover:bg-[#FFF5F5]"
+                            >
+                              Ta bort punkt
+                            </button>
+                          )}
+                          <label className="flex shrink-0 items-center gap-1 rounded-lg border border-[#E8E3DC] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47]">
+                            Aktiv
+                            <input
+                              type="checkbox"
+                              checked={section.enabled}
+                              onChange={(event) => setSectionEnabled(section.id, event.target.checked)}
+                            />
+                          </label>
+                        </div>
                       </div>
+                      {isExpanded && section.description ? (
+                        <p className={`mb-2 text-xs ${isAtaDocument ? "text-[#7B6C5D]" : "text-[#766B60]"}`}>
+                          {section.description}
+                        </p>
+                      ) : null}
 
                       {!isExpanded ? (
                         <p className="text-[11px] text-[#766B60]">
@@ -586,14 +737,20 @@ export default function EntreprenorDocumentEditorPage() {
                         <div className="space-y-2">
                   {section.fields.map((field) => (
                     <div key={field.id}>
-                      <label className="block text-[11px] font-semibold uppercase tracking-wide text-[#6B5A47]">
+                      <label
+                        className={`block font-semibold ${
+                          isAtaDocument
+                            ? "text-xs text-[#5E5247]"
+                            : "text-[11px] uppercase tracking-wide text-[#6B5A47]"
+                        }`}
+                      >
                         {field.label}
                       </label>
                       {field.type === "textarea" ? (
                         <textarea
                           value={fieldValueToString(field.value)}
                           onChange={(event) => setFieldValue(section.id, field.id, event.target.value)}
-                          rows={3}
+                          rows={isAtaDocument ? 5 : 3}
                           className="mt-1 w-full rounded-lg border border-[#D9D1C6] bg-white px-2 py-1.5 text-xs text-[#2A2520]"
                         />
                       ) : field.type === "checkbox" ? (
@@ -652,6 +809,15 @@ export default function EntreprenorDocumentEditorPage() {
 
                             {itemExpanded && (
                               <>
+                                <div className="mb-1 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItemRow(section.id, item.id)}
+                                    className="rounded-md border border-[#E5CFCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#8A4242] hover:bg-[#FFF5F5]"
+                                  >
+                                    Ta bort rad
+                                  </button>
+                                </div>
                                 <input
                                   value={item.label}
                                   onChange={(event) => setItemValue(section.id, item.id, "label", event.target.value)}
@@ -708,6 +874,17 @@ export default function EntreprenorDocumentEditorPage() {
                       })()}
                     </div>
                   ))}
+                  {section.items && (
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => addItemRow(section.id)}
+                        className="rounded-lg border border-[#D2C5B5] bg-white px-2 py-1 text-[11px] font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                      >
+                        Lägg till rad
+                      </button>
+                    </div>
+                  )}
                         </div>
                       )}
                     </>

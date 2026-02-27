@@ -70,21 +70,21 @@ export function EntreprenorOfferFlowStepper({
         />
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
+      <div className={`mt-4 grid gap-3 md:grid-cols-2 ${steps.length >= 4 ? "2xl:grid-cols-4" : "xl:grid-cols-3"}`}>
         {steps.map((step) => {
           const styles = stateStyles(step.state);
           const content = (
-            <div className={`rounded-xl border p-3 transition ${styles.card}`}>
-              <div className="flex items-start gap-3">
+            <div className={`h-full rounded-xl border p-3 transition ${styles.card}`}>
+              <div className="flex h-full items-start gap-3">
                 <span
                   className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${styles.dot}`}
                 >
                   {step.state === "complete" ? "✓" : step.number}
                 </span>
-                <div className="min-w-0">
-                  <p className={`text-sm font-semibold ${styles.title}`}>{step.title}</p>
-                  <p className={`mt-1 text-xs ${styles.desc}`}>{step.description}</p>
-                  <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[#8C7860]">
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <p className={`min-h-[2.5rem] text-sm font-semibold leading-tight ${styles.title}`}>{step.title}</p>
+                  <p className={`mt-1 min-h-[3.5rem] text-xs leading-snug ${styles.desc}`}>{step.description}</p>
+                  <p className="mt-auto pt-2 text-[11px] font-semibold uppercase tracking-wide text-[#8C7860]">
                     {step.state === "current"
                       ? "Pågående steg"
                       : step.state === "complete"
@@ -99,11 +99,11 @@ export function EntreprenorOfferFlowStepper({
           );
 
           if (!step.href || step.state === "locked") {
-            return <div key={step.id}>{content}</div>;
+            return <div key={step.id} className="h-full">{content}</div>;
           }
 
           return (
-            <Link key={step.id} href={step.href} className="block">
+            <Link key={step.id} href={step.href} className="block h-full">
               {content}
             </Link>
           );

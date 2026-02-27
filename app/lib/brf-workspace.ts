@@ -10,6 +10,9 @@ export type BrfFileType =
   | "Dokument"
   | "Annat";
 
+import { readBrfActionsDraft, writeBrfActionsDraft } from "./brf-start";
+import { updateBrfProcurementFlowState } from "./brf-procurement-flow-store";
+
 export interface BrfFileRecord {
   id: string;
   name: string;
@@ -211,17 +214,64 @@ export function writeWorkspaceFiles(scope: WorkspaceFileScope, files: BrfFileRec
   window.dispatchEvent(new Event(fileUpdatedEvent(scope)));
 }
 
+function pruneBrfMaintenancePlanDerivedData() {
+  if (typeof window === "undefined") return;
+
+  const currentDraftActions = readBrfActionsDraft();
+  const remainingDraftActions = currentDraftActions.filter((action) => action.customAction === true);
+  if (remainingDraftActions.length !== currentDraftActions.length) {
+    writeBrfActionsDraft(remainingDraftActions);
+  }
+
+  const remainingIds = new Set(remainingDraftActions.map((action) => action.id));
+  updateBrfProcurementFlowState((current) => {
+    const nextSelectedActionIds = current.selectedActionIds.filter((id) => remainingIds.has(id));
+    const nextAdjustedScopeByActionId = Object.fromEntries(
+      Object.entries(current.adjustedScopeByActionId).filter(([actionId]) => remainingIds.has(actionId))
+    );
+
+    if (
+      nextSelectedActionIds.length === current.selectedActionIds.length &&
+      Object.keys(nextAdjustedScopeByActionId).length === Object.keys(current.adjustedScopeByActionId).length
+    ) {
+      return current;
+    }
+
+    return {
+      ...current,
+      selectedActionIds: nextSelectedActionIds,
+      adjustedScopeByActionId: nextAdjustedScopeByActionId,
+    };
+  });
+}
+
 export function removeWorkspaceFile(scope: WorkspaceFileScope, fileId: string) {
   const current = readWorkspaceFiles(scope);
+  const removedFile = current.find((file) => file.id === fileId);
   const next = current.filter((file) => file.id !== fileId);
   writeWorkspaceFiles(scope, next);
   removeWorkspaceFilePayload(scope, fileId);
+
+  if (
+    scope === "brf" &&
+    removedFile?.fileType === "Underhallsplan" &&
+    !next.some((file) => file.fileType === "Underhallsplan")
+  ) {
+    pruneBrfMaintenancePlanDerivedData();
+  }
 }
 
 export function clearWorkspaceFiles(scope: WorkspaceFileScope) {
+  const current = readWorkspaceFiles(scope);
+  const hadBrfMaintenancePlan =
+    scope === "brf" && current.some((file) => file.fileType === "Underhallsplan");
   writeWorkspaceFiles(scope, []);
   if (typeof window !== "undefined") {
     localStorage.removeItem(payloadStorageKey(scope));
+  }
+
+  if (hadBrfMaintenancePlan) {
+    pruneBrfMaintenancePlanDerivedData();
   }
 }
 

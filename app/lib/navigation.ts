@@ -8,12 +8,14 @@ export interface NavItem {
   label: string;
   href: string;
   match?: SidebarMatch;
+  activeQuery?: Record<string, string | null>;
 }
 
 export interface NavGroup {
   id: string;
   label: string;
   items: NavItem[];
+  collapsible?: boolean;
 }
 
 export interface QuickAction {
@@ -57,12 +59,44 @@ const SIDEBAR_NAV: Record<Exclude<UserRole, "osaker">, NavGroup[]> = {
     {
       id: "documents",
       label: "Dokument",
-      items: [{ id: "documents", label: "Dokument", href: routes.privatperson.documentsIndex(), match: "prefix" }],
+      collapsible: true,
+      items: [
+        {
+          id: "documents-all",
+          label: "Dokumentöversikt",
+          href: routes.privatperson.documentsIndex(),
+          match: "prefix",
+          activeQuery: { type: null },
+        },
+        {
+          id: "documents-quote",
+          label: "Offert",
+          href: routes.privatperson.documentsIndex({ type: "quote" }),
+          match: "prefix",
+          activeQuery: { type: "quote" },
+        },
+        {
+          id: "documents-contract",
+          label: "Avtal",
+          href: routes.privatperson.documentsIndex({ type: "contract" }),
+          match: "prefix",
+          activeQuery: { type: "contract" },
+        },
+        {
+          id: "documents-ate",
+          label: "ÄTA",
+          href: routes.privatperson.documentsIndex({ type: "ate" }),
+          match: "prefix",
+          activeQuery: { type: "ate" },
+        },
+        { id: "documents-files", label: "Inskickade dokument", href: routes.privatperson.filesIndex(), match: "prefix" },
+      ],
     },
     {
-      id: "files",
-      label: "Filer",
-      items: [{ id: "files", label: "Filer", href: routes.privatperson.filesIndex(), match: "prefix" }],
+      id: "economy",
+      label: "Ekonomi",
+      collapsible: true,
+      items: [{ id: "economy", label: "Ekonomiöversikt", href: routes.privatperson.economyIndex(), match: "prefix" }],
     },
     {
       id: "messages",
@@ -102,6 +136,52 @@ const SIDEBAR_NAV: Record<Exclude<UserRole, "osaker">, NavGroup[]> = {
       ],
     },
     {
+      id: "procurement",
+      label: "Upphandling",
+      collapsible: true,
+      items: [
+        {
+          id: "procurement-overview",
+          label: "Upphandlingsöversikt",
+          href: routes.brf.procurementIndex(),
+          match: "exact",
+        },
+        {
+          id: "procurement-offer-flow",
+          label: "Offertflöde",
+          href: routes.brf.procurementOfferIndex(),
+          match: "prefix",
+        },
+        {
+          id: "procurement-requests",
+          label: "Förfrågningar",
+          href: routes.brf.requestsIndex(),
+          match: "prefix",
+        },
+        {
+          id: "procurement-quotes",
+          label: "Offert",
+          href: routes.brf.documentsIndex({ type: "quote" }),
+          match: "prefix",
+          activeQuery: { type: "quote" },
+        },
+        {
+          id: "procurement-contracts",
+          label: "Avtal",
+          href: routes.brf.documentsIndex({ type: "contract" }),
+          match: "prefix",
+          activeQuery: { type: "contract" },
+        },
+        {
+          id: "procurement-ate",
+          label: "ÄTA",
+          href: routes.brf.documentsIndex({ type: "ate" }),
+          match: "prefix",
+          activeQuery: { type: "ate" },
+        },
+      ],
+    },
+    {
       id: "requests",
       label: "Förfrågningar",
       items: [{ id: "requests", label: "Förfrågningar", href: routes.brf.requestsIndex(), match: "prefix" }],
@@ -109,12 +189,44 @@ const SIDEBAR_NAV: Record<Exclude<UserRole, "osaker">, NavGroup[]> = {
     {
       id: "documents",
       label: "Dokument",
-      items: [{ id: "documents", label: "Dokument", href: routes.brf.documentsIndex(), match: "prefix" }],
+      collapsible: true,
+      items: [
+        {
+          id: "documents-all",
+          label: "Dokumentöversikt",
+          href: routes.brf.documentsIndex(),
+          match: "prefix",
+          activeQuery: { type: null },
+        },
+        {
+          id: "documents-quote",
+          label: "Offert",
+          href: routes.brf.documentsIndex({ type: "quote" }),
+          match: "prefix",
+          activeQuery: { type: "quote" },
+        },
+        {
+          id: "documents-contract",
+          label: "Avtal",
+          href: routes.brf.documentsIndex({ type: "contract" }),
+          match: "prefix",
+          activeQuery: { type: "contract" },
+        },
+        {
+          id: "documents-ate",
+          label: "ÄTA",
+          href: routes.brf.documentsIndex({ type: "ate" }),
+          match: "prefix",
+          activeQuery: { type: "ate" },
+        },
+        { id: "documents-files", label: "Inskickade dokument", href: routes.brf.filesIndex(), match: "prefix" },
+      ],
     },
     {
-      id: "files",
-      label: "Filer",
-      items: [{ id: "files", label: "Filer", href: routes.brf.filesIndex(), match: "prefix" }],
+      id: "economy",
+      label: "Ekonomi",
+      collapsible: true,
+      items: [{ id: "economy", label: "Ekonomiöversikt", href: routes.brf.economyIndex(), match: "prefix" }],
     },
     {
       id: "messages",
@@ -146,12 +258,38 @@ const SIDEBAR_NAV: Record<Exclude<UserRole, "osaker">, NavGroup[]> = {
     {
       id: "documents",
       label: "Dokument",
-      items: [{ id: "documents", label: "Dokument", href: routes.entreprenor.documentsIndex(), match: "prefix" }],
+      collapsible: true,
+      items: [
+        {
+          id: "documents-all",
+          label: "Dokumentöversikt",
+          href: routes.entreprenor.documentsIndex(),
+          match: "prefix",
+          activeQuery: { type: null },
+        },
+        {
+          id: "documents-quote",
+          label: "Offert",
+          href: routes.entreprenor.documentsIndex({ type: "quote" }),
+          match: "prefix",
+          activeQuery: { type: "quote" },
+        },
+        {
+          id: "documents-contract",
+          label: "Avtal",
+          href: routes.entreprenor.documentsIndex({ type: "contract" }),
+          match: "prefix",
+          activeQuery: { type: "contract" },
+        },
+        { id: "documents-ate", label: "ÄTA", href: routes.entreprenor.ataGeneratorIndex(), match: "prefix" },
+        { id: "documents-files", label: "Inskickade dokument", href: routes.entreprenor.filesIndex(), match: "prefix" },
+      ],
     },
     {
-      id: "files",
-      label: "Filer",
-      items: [{ id: "files", label: "Filer", href: routes.entreprenor.filesIndex(), match: "prefix" }],
+      id: "economy",
+      label: "Ekonomi",
+      collapsible: true,
+      items: [{ id: "economy", label: "Ekonomiöversikt", href: routes.entreprenor.economyIndex(), match: "prefix" }],
     },
     {
       id: "messages",

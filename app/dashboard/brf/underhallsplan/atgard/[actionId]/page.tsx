@@ -5,7 +5,7 @@ import { useEffect } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../../../../components/auth-context";
 import { DashboardShell } from "../../../../../components/dashboard-shell";
-import { BrfActionDetailsEditor } from "../../../../../components/brf-action-details-editor";
+import { AtgardDetaljPanel } from "../../../../../components/atgard-detalj-panel";
 import { Breadcrumbs } from "../../../../../components/ui/breadcrumbs";
 import { routes } from "../../../../../lib/routes";
 
@@ -87,7 +87,7 @@ export default function BrfActionDetailsPage() {
         </Link>
       </section>
 
-      <BrfActionDetailsEditor key={actionId} actionId={actionId} backHref={backHref} />
+      <AtgardDetaljPanel key={actionId} actionId={actionId} backHref={backHref} />
     </DashboardShell>
   );
 }

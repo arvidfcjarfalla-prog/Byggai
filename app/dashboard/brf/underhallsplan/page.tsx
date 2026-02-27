@@ -41,8 +41,8 @@ export default function BrfUnderhallsplanPage() {
   return (
     <DashboardShell
       roleLabel="Bostadsrättsförening"
-      heading="Underhållsplan och åtgärdslista"
-      subheading="Ladda upp underhållsplan, granska extraherade åtgärder och skicka strukturerade förfrågningar."
+      heading="Underhållsplan (Analys & urval)"
+      subheading="Analysera underhållsplanen, filtrera åtgärder och välj urval inför upphandling. Offertflödet ligger nu under Upphandling."
       startProjectHref={routes.brf.maintenanceIndex()}
       startProjectLabel="Underhållsplan"
       navItems={[
@@ -56,7 +56,7 @@ export default function BrfUnderhallsplanPage() {
       ]}
       cards={[]}
     >
-      <BrfUploadWorkspace embedded />
+      <BrfUploadWorkspace embedded mode="analysis-only" />
     </DashboardShell>
   );
 }

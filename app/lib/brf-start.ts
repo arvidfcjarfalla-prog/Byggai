@@ -16,6 +16,7 @@ export interface BrfActionDraft {
   plannedYear: number;
   estimatedPriceSek?: number;
   emissionsKgCo2e?: number;
+  customAction?: boolean;
   details?: string;
   rawRow?: string;
   sourceSheet?: string;
@@ -73,10 +74,14 @@ export function readBrfActionsDraft(): BrfActionDraft[] {
   const parsed = safeParse<BrfActionDraft[]>(raw);
   if (!Array.isArray(parsed)) return [];
   return parsed
-    .filter((item) => typeof item?.title === "string" && item.title.trim().length > 0)
+    .filter((item) => {
+      if (!item || typeof item !== "object") return false;
+      if (item.customAction === true) return true;
+      return typeof item.title === "string" && item.title.trim().length > 0;
+    })
     .map((item, index) => ({
       id: item.id || `draft-action-${index}`,
-      title: item.title,
+      title: typeof item.title === "string" ? item.title : "",
       category: item.category || "Övrigt",
       status:
         item.status === "Eftersatt" || item.status === "Genomförd"
@@ -94,6 +99,7 @@ export function readBrfActionsDraft(): BrfActionDraft[] {
         Number.isFinite(item.emissionsKgCo2e ?? NaN) && (item.emissionsKgCo2e ?? 0) >= 0
           ? item.emissionsKgCo2e
           : undefined,
+      customAction: item.customAction === true ? true : undefined,
       details: item.details,
       rawRow: typeof item.rawRow === "string" ? item.rawRow : undefined,
       sourceSheet: typeof item.sourceSheet === "string" ? item.sourceSheet : undefined,
@@ -169,6 +175,7 @@ export function toProcurementAction(action: BrfActionDraft): ProcurementAction {
     estimatedPriceSek: action.estimatedPriceSek ?? 0,
     emissionsKgCo2e: action.emissionsKgCo2e ?? 0,
     source: "local",
+    customAction: action.customAction === true ? true : undefined,
     details: action.details,
     rawRow: action.rawRow,
     sourceSheet: action.sourceSheet,
@@ -186,6 +193,7 @@ export function fromProcurementAction(action: ProcurementAction): BrfActionDraft
     plannedYear: action.plannedYear,
     estimatedPriceSek: action.estimatedPriceSek,
     emissionsKgCo2e: action.emissionsKgCo2e,
+    customAction: action.customAction === true ? true : undefined,
     details: action.details,
     rawRow: action.rawRow,
     sourceSheet: action.sourceSheet,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   applyActionDetailValues,
   getActionDetailFields,
@@ -294,22 +294,37 @@ function calculateEstimate({
 export function BrfActionDetailsEditor({
   actionId,
   backHref,
+  variant = "page",
+  onClose,
+  isSelected,
+  onToggleSelected,
+  autoFocusTitle = false,
+  onSaved,
 }: {
   actionId: string;
   backHref: string;
+  variant?: "page" | "drawer";
+  onClose?: () => void;
+  isSelected?: boolean;
+  onToggleSelected?: () => void;
+  autoFocusTitle?: boolean;
+  onSaved?: () => void;
 }) {
   const [actions, setActions] = useState<BrfActionDraft[]>(() => readBrfActionsDraft());
   const action = useMemo(
     () => actions.find((item) => item.id === actionId),
     [actionId, actions]
   );
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const [title, setTitle] = useState(action?.title || "");
+  const [category, setCategory] = useState(action?.category || "Övrigt underhåll");
   const fields = useMemo(
-    () => getActionDetailFields(action?.category || "Övrigt underhåll"),
-    [action?.category]
+    () => getActionDetailFields(category || "Övrigt underhåll"),
+    [category]
   );
   const categoryKey = useMemo(
-    () => toActionCategoryKey(action?.category || "Övrigt underhåll"),
-    [action?.category]
+    () => toActionCategoryKey(category || "Övrigt underhåll"),
+    [category]
   );
 
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -321,12 +336,16 @@ export function BrfActionDetailsEditor({
   const [plannedYear, setPlannedYear] = useState(action ? String(action.plannedYear || "") : "");
   const [estimatedPriceSek, setEstimatedPriceSek] = useState(
     action && typeof action.estimatedPriceSek === "number"
-      ? String(action.estimatedPriceSek)
+      ? action.customAction && action.estimatedPriceSek === 0
+        ? ""
+        : String(action.estimatedPriceSek)
       : ""
   );
   const [emissionsKgCo2e, setEmissionsKgCo2e] = useState(
     action && typeof action.emissionsKgCo2e === "number"
-      ? String(action.emissionsKgCo2e)
+      ? action.customAction && action.emissionsKgCo2e === 0
+        ? ""
+        : String(action.emissionsKgCo2e)
       : ""
   );
 
@@ -356,6 +375,15 @@ export function BrfActionDetailsEditor({
 
   const [generatedEstimate, setGeneratedEstimate] = useState<GeneratedEstimate | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!autoFocusTitle) return;
+    const id = window.setTimeout(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }, 30);
+    return () => window.clearTimeout(id);
+  }, [autoFocusTitle]);
 
   const mappedLabels = useMemo(() => new Set(fields.map((field) => field.label)), [fields]);
   const sourceDetails = useMemo(
@@ -479,6 +507,8 @@ export function BrfActionDetailsEditor({
 
       return {
         ...updatedWithDetails,
+        title: title.trim() || item.title,
+        category: category.trim() || item.category,
         status,
         plannedYear: toFiniteYear(plannedYear, item.plannedYear),
         estimatedPriceSek: toFiniteNumber(estimatedPriceSek),
@@ -490,6 +520,7 @@ export function BrfActionDetailsEditor({
     setActions(updatedActions);
     writeBrfActionsDraft(updatedActions);
     setSavedNotice("Åtgärden är uppdaterad och sparad i underhållsplanen.");
+    onSaved?.();
   };
 
   if (!action) {
@@ -499,12 +530,22 @@ export function BrfActionDetailsEditor({
         <p className="mt-2 text-sm text-[#6B5A47]">
           Den här åtgärden finns inte längre i ditt underlag. Gå tillbaka och välj en ny rad.
         </p>
-        <Link
-          href={backHref}
-          className="mt-4 inline-flex rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-        >
-          Tillbaka till underhållsplan
-        </Link>
+        {variant === "drawer" ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-4 inline-flex rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+          >
+            Stäng
+          </button>
+        ) : (
+          <Link
+            href={backHref}
+            className="mt-4 inline-flex rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+          >
+            Tillbaka till underhållsplan
+          </Link>
+        )}
       </section>
     );
   }
@@ -518,18 +559,75 @@ export function BrfActionDetailsEditor({
               Åtgärdsprofil
             </p>
             <h2 className="mt-1 text-2xl font-bold tracking-tight text-[#2A2520]">
-              {action.title}
+              {title.trim() || "Namnlös åtgärd"}
             </h2>
             <p className="mt-1 text-sm text-[#6B5A47]">
-              {action.category} · {action.status} · Planerat år {action.plannedYear}
+              {category} · {status} · Planerat år {plannedYear || action.plannedYear}
             </p>
           </div>
-          <Link
-            href={backHref}
-            className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-          >
-            Tillbaka till underhållsplan
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {typeof isSelected === "boolean" && onToggleSelected && (
+              <button
+                type="button"
+                onClick={onToggleSelected}
+                className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                  isSelected
+                    ? "border border-[#D2C5B5] bg-white text-[#6B5A47] hover:bg-[#F6F0E8]"
+                    : "bg-[#E7B54A] text-[#2A2520]"
+                }`}
+              >
+                {isSelected ? "Avmarkera" : "Markera som vald"}
+              </button>
+            )}
+            {variant === "drawer" ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+              >
+                Stäng
+              </button>
+            ) : (
+              <Link
+                href={backHref}
+                className="rounded-xl border border-[#D2C5B5] bg-white px-4 py-2 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+              >
+                Tillbaka till underhållsplan
+              </Link>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
+        <h3 className="text-lg font-bold text-[#2A2520]">Grunduppgifter</h3>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <label className="block text-sm md:col-span-2">
+            <span className="mb-1 block font-semibold text-[#2A2520]">Titel</span>
+            <input
+              ref={titleInputRef}
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Ange åtgärdens namn"
+              className="w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-semibold text-[#2A2520]">Kategori</span>
+            <input
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              placeholder="Övrigt underhåll"
+              className="w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2"
+            />
+          </label>
+          <div className="rounded-xl border border-[#EFE8DD] bg-[#FAF8F5] p-3 text-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">Källa</p>
+            <p className="mt-1 text-[#2A2520]">
+              {action.sourceSheet || (action.rawRow?.includes("Manuellt") ? "Manuellt skapad" : "Underlag")}
+            </p>
+            {action.sourceRow ? <p className="text-xs text-[#6B5A47]">Rad {action.sourceRow}</p> : null}
+          </div>
         </div>
       </section>
 
@@ -838,12 +936,31 @@ export function BrfActionDetailsEditor({
         >
           Spara åtgärd
         </button>
-        <Link
-          href={backHref}
-          className="rounded-xl border border-[#D2C5B5] bg-white px-5 py-2.5 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-        >
-          Tillbaka
-        </Link>
+        {typeof isSelected === "boolean" && onToggleSelected && (
+          <button
+            type="button"
+            onClick={onToggleSelected}
+            className="rounded-xl border border-[#D2C5B5] bg-white px-5 py-2.5 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+          >
+            {isSelected ? "Avmarkera" : "Markera som vald"}
+          </button>
+        )}
+        {variant === "drawer" ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-[#D2C5B5] bg-white px-5 py-2.5 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+          >
+            Stäng
+          </button>
+        ) : (
+          <Link
+            href={backHref}
+            className="rounded-xl border border-[#D2C5B5] bg-white px-5 py-2.5 text-sm font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+          >
+            Tillbaka
+          </Link>
+        )}
       </div>
 
       {savedNotice && (

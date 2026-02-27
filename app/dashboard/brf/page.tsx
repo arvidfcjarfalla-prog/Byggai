@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { DashboardShell } from "../../components/dashboard-shell";
 import { FileDeletionNotificationsWidget } from "../../components/file-deletion-notifications-widget";
+import { ProjectPhaseBanner } from "../../components/project-phase-banner";
 import { useAuth } from "../../components/auth-context";
 import { routes } from "../../lib/routes";
 
@@ -93,7 +94,12 @@ export default function BrfDashboardPage() {
           ctaHref: routes.brf.requestsIndex(),
         },
       ]}
-      topContent={<FileDeletionNotificationsWidget workspaceId="brf" />}
+      topContent={
+        <div className="space-y-4">
+          <ProjectPhaseBanner audience="brf" />
+          <FileDeletionNotificationsWidget workspaceId="brf" />
+        </div>
+      }
     />
   );
 }

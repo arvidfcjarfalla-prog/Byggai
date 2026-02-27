@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useActiveProject } from "../../../components/active-project-context";
 import { useAuth } from "../../../components/auth-context";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { RequestConversationsSidebar } from "../../../components/request-conversations-sidebar";
@@ -20,14 +21,89 @@ function requestStatusLabel(status: PlatformRequest["status"]): string {
   return "Skickad";
 }
 
+function EntreprenorMeddelandenContent({
+  incomingRequests,
+  selectedRequestId,
+  onSelectRequest,
+  actorLabel,
+  onMessageSent,
+}: {
+  incomingRequests: PlatformRequest[];
+  selectedRequestId: string | null;
+  onSelectRequest: (requestId: string) => void;
+  actorLabel: string;
+  onMessageSent: (request: PlatformRequest) => void;
+}) {
+  const { activeProject } = useActiveProject();
+  const scopedProjectId = activeProject?.id ?? null;
+  const isProjectScoped = Boolean(scopedProjectId);
+  const visibleRequests = scopedProjectId
+    ? incomingRequests.filter((request) => request.id === scopedProjectId)
+    : incomingRequests;
+
+  if (visibleRequests.length === 0) {
+    return (
+      <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
+        <p className="text-sm text-[#766B60]">
+          Inga förfrågningar ännu. När BRF eller privatperson skickar dyker de upp här.
+        </p>
+      </section>
+    );
+  }
+
+  const resolvedSelectedRequestId =
+    scopedProjectId && visibleRequests.some((request) => request.id === scopedProjectId)
+      ? scopedProjectId
+      : selectedRequestId && visibleRequests.some((request) => request.id === selectedRequestId)
+        ? selectedRequestId
+        : visibleRequests[0]?.id || null;
+
+  const selectedRequest =
+    visibleRequests.find((request) => request.id === resolvedSelectedRequestId) || visibleRequests[0] || null;
+
+  if (!selectedRequest) return null;
+
+  return (
+    <section className={isProjectScoped ? "space-y-4" : "grid gap-6 xl:grid-cols-[320px_1fr]"}>
+      {!isProjectScoped && (
+        <RequestConversationsSidebar
+          requests={visibleRequests}
+          selectedRequestId={resolvedSelectedRequestId}
+          actorRole="entreprenor"
+          title="Inkorg"
+          onSelectRequest={onSelectRequest}
+        />
+      )}
+
+      <main>
+        {isProjectScoped && (
+          <div className="mb-4 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">Aktiv förfrågan</p>
+            <p className="text-sm font-semibold text-[#2A2520]">
+              Visar endast meddelanden för {selectedRequest.title}
+            </p>
+          </div>
+        )}
+        <RequestMessagesPanel
+          key={`entreprenor-request-messages-${selectedRequest.id}`}
+          requestId={selectedRequest.id}
+          actorRole="entreprenor"
+          actorLabel={actorLabel}
+          headline={selectedRequest.title}
+          description={`${selectedRequest.location} · ${requestStatusLabel(selectedRequest.status)}`}
+          onMessageSent={() => onMessageSent(selectedRequest)}
+        />
+      </main>
+    </section>
+  );
+}
+
 export default function EntreprenorMeddelandenPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialRequestId = searchParams.get("requestId");
   const { user, ready } = useAuth();
-  const [incomingRequests, setIncomingRequests] = useState<PlatformRequest[]>(
-    () => listRequests()
-  );
+  const [incomingRequests, setIncomingRequests] = useState<PlatformRequest[]>(() => listRequests());
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(initialRequestId);
 
   useEffect(() => {
@@ -65,21 +141,9 @@ export default function EntreprenorMeddelandenPage() {
 
   if (!user) return null;
 
-  const resolvedSelectedRequestId =
-    selectedRequestId && incomingRequests.some((request) => request.id === selectedRequestId)
-      ? selectedRequestId
-      : incomingRequests[0]?.id || null;
-
-  const selectedRequest =
-    incomingRequests.find((request) => request.id === resolvedSelectedRequestId) ||
-    incomingRequests[0] ||
-    null;
-
   const actorLabel = user.name?.trim() || user.email || "Entreprenör";
 
-  const handleMessageSent = () => {
-    if (!selectedRequest) return;
-
+  const handleMessageSent = (selectedRequest: PlatformRequest) => {
     const nextRecipients = selectedRequest.recipients?.map((recipient) => {
       if (recipient.status === "declined") return recipient;
       return {
@@ -110,37 +174,13 @@ export default function EntreprenorMeddelandenPage() {
       ]}
       cards={[]}
     >
-      {incomingRequests.length === 0 && (
-        <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
-          <p className="text-sm text-[#766B60]">
-            Inga förfrågningar ännu. När BRF eller privatperson skickar dyker de upp här.
-          </p>
-        </section>
-      )}
-
-      {selectedRequest && (
-        <section className="grid gap-6 xl:grid-cols-[320px_1fr]">
-          <RequestConversationsSidebar
-            requests={incomingRequests}
-            selectedRequestId={resolvedSelectedRequestId}
-            actorRole="entreprenor"
-            title="Inkorg"
-            onSelectRequest={setSelectedRequestId}
-          />
-
-          <main>
-            <RequestMessagesPanel
-              key={`entreprenor-request-messages-${selectedRequest.id}`}
-              requestId={selectedRequest.id}
-              actorRole="entreprenor"
-              actorLabel={actorLabel}
-              headline={selectedRequest.title}
-              description={`${selectedRequest.location} · ${requestStatusLabel(selectedRequest.status)}`}
-              onMessageSent={handleMessageSent}
-            />
-          </main>
-        </section>
-      )}
+      <EntreprenorMeddelandenContent
+        incomingRequests={incomingRequests}
+        selectedRequestId={selectedRequestId}
+        onSelectRequest={setSelectedRequestId}
+        actorLabel={actorLabel}
+        onMessageSent={handleMessageSent}
+      />
     </DashboardShell>
   );
 }

@@ -1,7 +1,7 @@
 import type { PlatformDocument } from "../documents-store";
 import { routes } from "../routes";
 
-export type EntreprenorOfferFlowStepId = "request" | "analysis" | "generate" | "preview";
+export type EntreprenorOfferFlowStepId = "request" | "analysis" | "offer_document";
 export type EntreprenorOfferFlowStepState = "current" | "complete" | "available" | "locked";
 
 export interface EntreprenorOfferFlowStep {
@@ -54,20 +54,19 @@ export function buildEntreprenorOfferFlowSteps(input: {
   const analysisHref = input.offerId
     ? routes.entreprenor.offerAnalysis({ offerId: input.offerId })
     : undefined;
-  const generateHref = input.generateDocumentId
+  const offerDocumentHref = input.previewDocumentId
+    ? routes.entreprenor.documentDetail({
+        documentId: input.previewDocumentId,
+        requestId: input.requestId,
+      })
+    : input.generateDocumentId
     ? routes.entreprenor.documentDetail({
         documentId: input.generateDocumentId,
         requestId: input.requestId,
       })
     : routes.entreprenor.documentsIndex({ requestId: input.requestId });
-  const previewHref = input.previewDocumentId
-    ? routes.entreprenor.documentDetail({
-        documentId: input.previewDocumentId,
-        requestId: input.requestId,
-      })
-    : undefined;
 
-  const order: EntreprenorOfferFlowStepId[] = ["request", "analysis", "generate", "preview"];
+  const order: EntreprenorOfferFlowStepId[] = ["request", "analysis", "offer_document"];
   const activeIndex = order.indexOf(input.activeStepId);
 
   const baseSteps: Array<Omit<EntreprenorOfferFlowStep, "state"> & { href?: string }> = [
@@ -86,18 +85,11 @@ export function buildEntreprenorOfferFlowSteps(input: {
       href: analysisHref,
     },
     {
-      id: "generate",
+      id: "offer_document",
       number: 3,
-      title: "Offertgenerering",
-      description: "Skapa/redigera offertdokument från underlaget.",
-      href: generateHref,
-    },
-    {
-      id: "preview",
-      number: 4,
-      title: "Offertförhandsvisning",
-      description: "Se exakt det kunden får innan skick.",
-      href: previewHref,
+      title: "Offertdokument",
+      description: "Skapa, redigera och förhandsgranska offert innan skick.",
+      href: offerDocumentHref,
     },
   ];
 
@@ -109,7 +101,7 @@ export function buildEntreprenorOfferFlowSteps(input: {
     let state: EntreprenorOfferFlowStepState = "locked";
     if (isCurrent) {
       state = "current";
-    } else if (!hasLink && step.id !== "analysis" && step.id !== "preview") {
+    } else if (!hasLink && step.id !== "analysis") {
       state = "locked";
     } else if (!hasLink) {
       state = "locked";

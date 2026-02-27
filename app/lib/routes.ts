@@ -11,6 +11,10 @@ type RequestContext = {
   requestId?: string | null;
 };
 
+type DocumentsIndexContext = RequestContext & {
+  type?: "quote" | "contract" | "ate" | "all" | null;
+};
+
 type ProjectContext = {
   projectId?: string | null;
 };
@@ -47,8 +51,8 @@ function createWorkspaceRoutes(segment: DashboardRoleSegment) {
     overview(): string {
       return base;
     },
-    documentsIndex(context?: RequestContext): string {
-      return withQuery(`${base}/dokument`, { requestId: context?.requestId });
+    documentsIndex(context?: DocumentsIndexContext): string {
+      return withQuery(`${base}/dokument`, { requestId: context?.requestId, type: context?.type });
     },
     documentDetail(input: { documentId: string } & RequestContext): string {
       return withQuery(`${base}/dokument/${encodeURIComponent(input.documentId)}`, {
@@ -67,6 +71,9 @@ function createWorkspaceRoutes(segment: DashboardRoleSegment) {
     filesIndex(): string {
       return `${base}/filer`;
     },
+    economyIndex(context?: ProjectContext): string {
+      return withQuery(`${base}/ekonomi`, { projectId: context?.projectId });
+    },
     messagesIndex(context?: RequestContext): string {
       return withQuery(`${base}/meddelanden`, { requestId: context?.requestId });
     },
@@ -81,6 +88,21 @@ const brfRoutes = {
   maintenanceIndex(): string {
     return "/dashboard/brf/underhallsplan";
   },
+  procurementIndex(): string {
+    return "/dashboard/brf/upphandling";
+  },
+  procurementOfferIndex(): string {
+    return "/dashboard/brf/upphandling/offert";
+  },
+  procurementOfferStep1(): string {
+    return "/dashboard/brf/upphandling/offert/steg-1";
+  },
+  procurementOfferStep2(): string {
+    return "/dashboard/brf/upphandling/offert/steg-2";
+  },
+  procurementOfferStep3(): string {
+    return "/dashboard/brf/upphandling/offert/steg-3";
+  },
   actionDetail(input: { actionId: string } & WithFrom): string {
     return withQuery(`/dashboard/brf/underhallsplan/atgard/${encodeURIComponent(input.actionId)}`, {
       from: input.from,
@@ -93,6 +115,9 @@ const brfRoutes = {
 
 const entreprenorRoutes = {
   ...createWorkspaceRoutes("entreprenor"),
+  ataGeneratorIndex(context?: RequestContext): string {
+    return withQuery("/dashboard/entreprenor/dokument/ata", { requestId: context?.requestId });
+  },
   requestDetail(input: { requestId: string }): string {
     return `/dashboard/entreprenor/forfragningar/request/${encodeURIComponent(input.requestId)}`;
   },

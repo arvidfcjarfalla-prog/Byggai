@@ -24,6 +24,10 @@ interface RequestDocumentGeneratorPanelProps {
   request: PlatformRequest;
   actorLabel: string;
   onDocumentSent?: () => void;
+  allowedKinds?: DocumentType[];
+  lockedKind?: DocumentType;
+  title?: string;
+  description?: string;
 }
 
 const DOCUMENT_OPTIONS: Array<{ kind: DocumentType; label: string }> = [
@@ -77,6 +81,7 @@ function toPromptPayload(input: {
     paymentPlan: string;
     terms: string;
     reservations: string;
+    ateDescription?: string;
   };
 }): DocumentPromptPayload {
   const { request, selectedSectionIds, entrepreneurInputs } = input;
@@ -88,6 +93,7 @@ function toPromptPayload(input: {
       paymentPlan: entrepreneurInputs.paymentPlan || undefined,
       terms: entrepreneurInputs.terms || undefined,
       reservations: entrepreneurInputs.reservations || undefined,
+      ateDescription: entrepreneurInputs.ateDescription || undefined,
     },
     requestContext: {
       id: request.id,
@@ -116,15 +122,26 @@ export function RequestDocumentGeneratorPanel({
   request,
   actorLabel,
   onDocumentSent,
+  allowedKinds,
+  lockedKind,
+  title,
+  description,
 }: RequestDocumentGeneratorPanelProps) {
   const router = useRouter();
-  const [kind, setKind] = useState<DocumentType>("quote");
+  const availableKinds = useMemo(() => {
+    if (!allowedKinds || allowedKinds.length === 0) return DOCUMENT_OPTIONS;
+    const allowed = new Set(allowedKinds);
+    return DOCUMENT_OPTIONS.filter((option) => allowed.has(option.kind));
+  }, [allowedKinds]);
+  const fallbackKind = availableKinds[0]?.kind ?? "quote";
+  const [kind, setKind] = useState<DocumentType>(lockedKind ?? fallbackKind);
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [selectedSectionIds, setSelectedSectionIds] = useState<string[]>([]);
   const [priceSummary, setPriceSummary] = useState("");
   const [paymentPlan, setPaymentPlan] = useState("");
   const [terms, setTerms] = useState("");
   const [reservations, setReservations] = useState("");
+  const [ateDescription, setAteDescription] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -144,6 +161,16 @@ export function RequestDocumentGeneratorPanel({
   const [isCreatingMode, setIsCreatingMode] = useState<"draft" | "send" | null>(null);
 
   useEffect(() => {
+    if (lockedKind) {
+      setKind(lockedKind);
+      return;
+    }
+    if (!availableKinds.some((option) => option.kind === kind)) {
+      setKind(fallbackKind);
+    }
+  }, [availableKinds, fallbackKind, kind, lockedKind]);
+
+  useEffect(() => {
     setSelectedSectionIds(sectionDefaults);
   }, [sectionDefaults]);
 
@@ -153,6 +180,7 @@ export function RequestDocumentGeneratorPanel({
     setPaymentPlan("");
     setTerms("");
     setReservations("");
+    setAteDescription("");
     setSelectedFileIds([]);
   };
 
@@ -191,6 +219,9 @@ export function RequestDocumentGeneratorPanel({
         fields = applyFieldOverride(fields, "reservation-text", reservations.trim());
         fields = applyFieldOverride(fields, "price-comment", reservations.trim());
       }
+      if (kind === "ate" && ateDescription.trim().length > 0) {
+        fields = applyFieldOverride(fields, "change-description", ateDescription.trim());
+      }
       if (
         paymentPlan.trim().length > 0 &&
         (section.id === "pricing" || section.id === "payment" || section.id === "kov-pricing")
@@ -212,13 +243,14 @@ export function RequestDocumentGeneratorPanel({
     const promptPayload = toPromptPayload({
       request,
       selectedSectionIds,
-      entrepreneurInputs: {
-        priceSummary,
-        paymentPlan,
-        terms,
-        reservations,
-      },
-    });
+        entrepreneurInputs: {
+          priceSummary,
+          paymentPlan,
+          terms,
+          reservations,
+          ateDescription,
+        },
+      });
 
     return {
       attachments,
@@ -230,6 +262,10 @@ export function RequestDocumentGeneratorPanel({
           .filter((ref) => ref.trim().length > 0),
         attachments,
         sections: sectionsWithInputs,
+        title:
+          kind === "ate" && ateDescription.trim().length > 0
+            ? `ÄTA (Konsumentverket mall) · ${ateDescription.trim().slice(0, 70)}`
+            : draftTemplate.title,
         documentPromptPayload: promptPayload,
       },
     };
@@ -346,27 +382,35 @@ export function RequestDocumentGeneratorPanel({
 
   return (
     <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
-      <h3 className="text-lg font-bold text-[#2A2520]">Skapa projektbundet dokument</h3>
+      <h3 className="text-lg font-bold text-[#2A2520]">{title ?? "Skapa projektbundet dokument"}</h3>
       <p className="mt-1 text-sm text-[#766B60]">
-        Skapa först ett utkast och granska live preview innan du skickar. Dokumentet är kopplat till vald förfrågan.
+        {description ??
+          "Skapa först ett utkast och granska live preview innan du skickar. Dokumentet är kopplat till vald förfrågan."}
       </p>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-3 rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
-          <label className="block text-xs font-semibold text-[#6B5A47]">
-            Dokumenttyp
-            <select
-              value={kind}
-              onChange={(event) => setKind(event.target.value as DocumentType)}
-              className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
-            >
-              {DOCUMENT_OPTIONS.map((option) => (
-                <option key={option.kind} value={option.kind}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          {lockedKind ? (
+            <div className="rounded-xl border border-[#E8E3DC] bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#6B5A47]">Dokumenttyp</p>
+              <p className="mt-1 text-sm font-semibold text-[#2A2520]">{typeLabel(lockedKind)}</p>
+            </div>
+          ) : (
+            <label className="block text-xs font-semibold text-[#6B5A47]">
+              Dokumenttyp
+              <select
+                value={kind}
+                onChange={(event) => setKind(event.target.value as DocumentType)}
+                className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
+              >
+                {availableKinds.map((option) => (
+                  <option key={option.kind} value={option.kind}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <div className="rounded-xl border border-[#E8E3DC] bg-white p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B5A47]">
@@ -407,7 +451,19 @@ export function RequestDocumentGeneratorPanel({
               Entreprenörsinput
             </p>
             <div className="mt-2 space-y-2">
-              <label className="block text-[11px] font-semibold text-[#6B5A47]">
+              {kind === "ate" ? (
+                <label className="block text-[11px] font-semibold text-[#6B5A47]">
+                  Vad gäller ÄTA:n?
+                  <textarea
+                    value={ateDescription}
+                    onChange={(event) => setAteDescription(event.target.value)}
+                    rows={3}
+                    placeholder="Beskriv vad som ska ändras/tilläggas och varför (detta används i ÄTA-dokumentet)."
+                    className="mt-1 w-full rounded-lg border border-[#D9D1C6] bg-white px-2 py-1.5 text-xs text-[#2A2520]"
+                  />
+                </label>
+              ) : (
+                <label className="block text-[11px] font-semibold text-[#6B5A47]">
                 Pris
                 <input
                   value={priceSummary}
@@ -416,6 +472,7 @@ export function RequestDocumentGeneratorPanel({
                   className="mt-1 w-full rounded-lg border border-[#D9D1C6] bg-white px-2 py-1.5 text-xs text-[#2A2520]"
                 />
               </label>
+              )}
               <label className="block text-[11px] font-semibold text-[#6B5A47]">
                 Betalningsplan
                 <textarea
@@ -484,6 +541,12 @@ export function RequestDocumentGeneratorPanel({
             <p className="text-[#6B5A47]">Sektioner valda: {selectedSectionIds.length} / {draftTemplate.sections.length}</p>
             <p className="text-[#6B5A47]">Bilagor valda: {selectedFileIds.length} st</p>
             <p className="text-[#6B5A47]">Request: {request.id}</p>
+            {kind === "ate" && ateDescription.trim().length > 0 ? (
+              <p className="mt-2 text-[#6B5A47]">
+                ÄTA-beskrivning: {ateDescription.trim().slice(0, 120)}
+                {ateDescription.trim().length > 120 ? "..." : ""}
+              </p>
+            ) : null}
             <p className="mt-2 text-[#766B60]">
               Payload inkluderar request-snapshot, scope, filsammanfattning, valda sektioner och entreprenörsinput.
             </p>

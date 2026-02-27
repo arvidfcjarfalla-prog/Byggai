@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useActiveProject } from "../../../components/active-project-context";
 import { useAuth } from "../../../components/auth-context";
 import { DashboardShell } from "../../../components/dashboard-shell";
 import { EntreprenorOfferFlowShell } from "../../../components/offers/EntreprenorOfferFlowShell";
@@ -36,6 +37,19 @@ function statusLabel(status: PlatformDocument["status"]): string {
   return "Utkast";
 }
 
+function formatDateTimeLabel(value: string | undefined): string | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toLocaleString("sv-SE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
@@ -49,6 +63,193 @@ function getContractorOfferForUser(offers: Offer[], userId?: string, userEmail?:
       if (normalizedUserEmail && offer.contractorId.toLowerCase() === normalizedUserEmail) return true;
       return false;
     }) ?? null
+  );
+}
+
+function EntreprenorDokumentContent({
+  incomingRequests,
+  selectedRequestId,
+  onSelectRequest,
+  version,
+  offersVersion,
+  userId,
+  userEmail,
+  actorLabel,
+}: {
+  incomingRequests: PlatformRequest[];
+  selectedRequestId: string | null;
+  onSelectRequest: (requestId: string | null) => void;
+  version: number;
+  offersVersion: number;
+  userId?: string;
+  userEmail?: string;
+  actorLabel: string;
+}) {
+  const { activeProject } = useActiveProject();
+  const searchParams = useSearchParams();
+  const scopedProjectId = activeProject?.id ?? null;
+  const isProjectScoped = Boolean(scopedProjectId);
+  const typeFilter = searchParams.get("type");
+  const normalizedTypeFilter =
+    typeFilter === "quote" || typeFilter === "contract" || typeFilter === "ate" ? typeFilter : null;
+  const visibleRequests = scopedProjectId
+    ? incomingRequests.filter((request) => request.id === scopedProjectId)
+    : incomingRequests;
+
+  const resolvedSelectedRequestId =
+    scopedProjectId && visibleRequests.some((request) => request.id === scopedProjectId)
+      ? scopedProjectId
+      : selectedRequestId && visibleRequests.some((request) => request.id === selectedRequestId)
+        ? selectedRequestId
+        : visibleRequests[0]?.id || null;
+
+  const selectedRequest =
+    visibleRequests.find((request) => request.id === resolvedSelectedRequestId) || visibleRequests[0] || null;
+
+  const documents = useMemo(() => {
+    const marker = version;
+    void marker;
+    if (!selectedRequest) return [];
+    const all = listDocumentsByRequest(selectedRequest.id);
+    return normalizedTypeFilter ? all.filter((document) => document.type === normalizedTypeFilter) : all;
+  }, [normalizedTypeFilter, selectedRequest, version]);
+  const projectOffers = useMemo(() => {
+    const marker = offersVersion;
+    void marker;
+    if (!selectedRequest) return [];
+    return listLatestOffersByProject(selectedRequest.id);
+  }, [offersVersion, selectedRequest]);
+  const currentContractorOffer = useMemo(
+    () => getContractorOfferForUser(projectOffers, userId, userEmail),
+    [projectOffers, userEmail, userId]
+  );
+  const latestQuoteDocument = useMemo(() => getLatestQuoteDocumentForRequest(documents), [documents]);
+  const flowSteps = useMemo(
+    () =>
+      selectedRequest
+        ? buildEntreprenorOfferFlowSteps({
+            activeStepId: "offer_document",
+            requestId: selectedRequest.id,
+            offerId: currentContractorOffer?.id ?? null,
+            generateDocumentId: latestQuoteDocument?.id ?? null,
+            previewDocumentId: latestQuoteDocument?.id ?? null,
+          })
+        : [],
+    [currentContractorOffer?.id, latestQuoteDocument?.id, selectedRequest]
+  );
+
+  if (visibleRequests.length === 0) {
+    return (
+      <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
+        <p className="text-sm text-[#766B60]">Inga förfrågningar ännu.</p>
+      </section>
+    );
+  }
+
+  if (!selectedRequest) return null;
+
+  return (
+    <EntreprenorOfferFlowShell
+      steps={flowSteps}
+      stepperSubheading="Steg 3 bygger själva offertdokumentet. Skapa ett utkast och gå vidare till live preview innan skick."
+    >
+      <section className={isProjectScoped ? "space-y-6" : "grid gap-6 xl:grid-cols-[320px_1fr]"}>
+        {!isProjectScoped && (
+          <RequestConversationsSidebar
+            requests={visibleRequests}
+            selectedRequestId={resolvedSelectedRequestId}
+            actorRole="entreprenor"
+            title="Förfrågningar"
+            onSelectRequest={onSelectRequest}
+          />
+        )}
+
+        <main className="space-y-6">
+          {isProjectScoped && (
+            <div className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">Aktiv förfrågan</p>
+              <p className="text-sm font-semibold text-[#2A2520]">
+                Visar endast dokument för {selectedRequest.title}
+              </p>
+            </div>
+          )}
+          {normalizedTypeFilter && (
+            <div className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#8C7860]">Dokumentfilter</p>
+              <p className="text-sm font-semibold text-[#2A2520]">
+                Visar endast {documentTypeLabel(normalizedTypeFilter).toLowerCase()}-dokument.
+              </p>
+            </div>
+          )}
+
+          <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
+            <h3 className="text-lg font-bold text-[#2A2520]">Dokument för vald förfrågan</h3>
+            <p className="mt-1 text-sm text-[#766B60]">
+              {selectedRequest.title} · {selectedRequest.location}
+            </p>
+            <p className="text-xs text-[#8C7860]">
+              Request: {selectedRequest.id} · Skapad{" "}
+              {new Date(selectedRequest.createdAt).toLocaleDateString("sv-SE")}
+            </p>
+            {documents.length === 0 ? (
+              <p className="mt-3 text-sm text-[#766B60]">Inga dokument skapade ännu.</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {documents.map((document) => {
+                  const acceptedAtLabel = formatDateTimeLabel(document.acceptedAt);
+                  const recipientLabel = document.audience === "brf" ? "BRF" : "privatperson";
+                  const acceptedByLabel = document.acceptedByLabel ?? recipientLabel;
+                  return (
+                    <li key={document.id} className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-[#2A2520]">{document.title}</p>
+                          <p className="text-xs text-[#6B5A47]">
+                            {documentTypeLabel(document.type)} · v{document.version} · {statusLabel(document.status)}
+                          </p>
+                          {document.status === "accepted" && acceptedAtLabel && (
+                            <p className="text-xs font-semibold text-[#3F6B3F]">
+                              Signerat av {acceptedByLabel} {acceptedAtLabel}
+                            </p>
+                          )}
+                          <p className="font-mono text-[11px] text-[#6B5A47]">{document.refId}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void copyText(document.refId)}
+                            className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            Kopiera RefID
+                          </button>
+                          <Link
+                            href={routes.entreprenor.documentDetail({
+                              documentId: document.id,
+                              requestId: selectedRequest.id,
+                            })}
+                            className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
+                          >
+                            Öppna editor
+                          </Link>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <RequestDocumentGeneratorPanel
+            request={selectedRequest}
+            actorLabel={actorLabel}
+            allowedKinds={["quote", "contract"]}
+            title="Skapa offert / avtal"
+            description="Generera offert- och avtalsdokument här. ÄTA-generering finns nu i den separata fliken ÄTA i vänstermenyn."
+          />
+        </main>
+      </section>
+    </EntreprenorOfferFlowShell>
   );
 }
 
@@ -81,48 +282,7 @@ export default function EntreprenorDokumentPage() {
   useEffect(() => subscribeDocuments(() => setVersion((current) => current + 1)), []);
   useEffect(() => subscribeOffers(() => setOffersVersion((current) => current + 1)), []);
 
-  const resolvedSelectedRequestId =
-    selectedRequestId && incomingRequests.some((request) => request.id === selectedRequestId)
-      ? selectedRequestId
-      : incomingRequests[0]?.id || null;
-
-  const selectedRequest =
-    incomingRequests.find((request) => request.id === resolvedSelectedRequestId) ||
-    incomingRequests[0] ||
-    null;
-
   const actorLabel = user?.name?.trim() || user?.email || "Entreprenör";
-
-  const documents = useMemo(() => {
-    const marker = version;
-    void marker;
-    if (!selectedRequest) return [];
-    return listDocumentsByRequest(selectedRequest.id);
-  }, [selectedRequest, version]);
-  const projectOffers = useMemo(() => {
-    const marker = offersVersion;
-    void marker;
-    if (!selectedRequest) return [];
-    return listLatestOffersByProject(selectedRequest.id);
-  }, [offersVersion, selectedRequest]);
-  const currentContractorOffer = useMemo(
-    () => getContractorOfferForUser(projectOffers, user?.id, user?.email),
-    [projectOffers, user?.email, user?.id]
-  );
-  const latestQuoteDocument = useMemo(() => getLatestQuoteDocumentForRequest(documents), [documents]);
-  const flowSteps = useMemo(
-    () =>
-      selectedRequest
-        ? buildEntreprenorOfferFlowSteps({
-            activeStepId: "generate",
-            requestId: selectedRequest.id,
-            offerId: currentContractorOffer?.id ?? null,
-            generateDocumentId: latestQuoteDocument?.id ?? null,
-            previewDocumentId: latestQuoteDocument?.id ?? null,
-          })
-        : [],
-    [currentContractorOffer?.id, latestQuoteDocument?.id, selectedRequest]
-  );
 
   if (!ready || !user) return null;
 
@@ -142,78 +302,16 @@ export default function EntreprenorDokumentPage() {
       ]}
       cards={[]}
     >
-      {incomingRequests.length === 0 && (
-        <section className="rounded-3xl border border-[#E6DFD6] bg-white p-6 shadow-sm">
-          <p className="text-sm text-[#766B60]">Inga förfrågningar ännu.</p>
-        </section>
-      )}
-
-      {selectedRequest && (
-        <EntreprenorOfferFlowShell
-          steps={flowSteps}
-          stepperSubheading="Steg 3 bygger själva offertdokumentet. Skapa ett utkast och gå vidare till live preview innan skick."
-        >
-          <section className="grid gap-6 xl:grid-cols-[320px_1fr]">
-            <RequestConversationsSidebar
-              requests={incomingRequests}
-              selectedRequestId={resolvedSelectedRequestId}
-              actorRole="entreprenor"
-              title="Förfrågningar"
-              onSelectRequest={setSelectedRequestId}
-            />
-
-            <main className="space-y-6">
-              <section className="rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
-              <h3 className="text-lg font-bold text-[#2A2520]">Dokument för vald förfrågan</h3>
-              <p className="mt-1 text-sm text-[#766B60]">{selectedRequest.title} · {selectedRequest.location}</p>
-              <p className="text-xs text-[#8C7860]">
-                Request: {selectedRequest.id} · Skapad{" "}
-                {new Date(selectedRequest.createdAt).toLocaleDateString("sv-SE")}
-              </p>
-              {documents.length === 0 ? (
-                <p className="mt-3 text-sm text-[#766B60]">Inga dokument skapade ännu.</p>
-              ) : (
-                <ul className="mt-3 space-y-2">
-                  {documents.map((document) => (
-                    <li key={document.id} className="rounded-2xl border border-[#E8E3DC] bg-[#FAF8F5] p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-[#2A2520]">{document.title}</p>
-                          <p className="text-xs text-[#6B5A47]">
-                            {documentTypeLabel(document.type)} · v{document.version} · {statusLabel(document.status)}
-                          </p>
-                          <p className="font-mono text-[11px] text-[#6B5A47]">{document.refId}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void copyText(document.refId)}
-                            className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                          >
-                            Kopiera RefID
-                          </button>
-                          <Link
-                            href={routes.entreprenor.documentDetail({
-                              documentId: document.id,
-                              requestId: selectedRequest.id,
-                            })}
-                            className="rounded-xl border border-[#D2C5B5] bg-white px-3 py-1.5 text-xs font-semibold text-[#6B5A47] hover:bg-[#F6F0E8]"
-                          >
-                            Öppna editor
-                          </Link>
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              </section>
-
-              <RequestDocumentGeneratorPanel request={selectedRequest} actorLabel={actorLabel} />
-            </main>
-          </section>
-        </EntreprenorOfferFlowShell>
-      )}
+      <EntreprenorDokumentContent
+        incomingRequests={incomingRequests}
+        selectedRequestId={selectedRequestId}
+        onSelectRequest={setSelectedRequestId}
+        version={version}
+        offersVersion={offersVersion}
+        userId={user.id}
+        userEmail={user.email}
+        actorLabel={actorLabel}
+      />
     </DashboardShell>
   );
 }

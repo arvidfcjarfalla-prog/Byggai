@@ -1,4 +1,9 @@
-import type { PlatformRequest } from "../requests-store";
+import {
+  markRequestOfferAccepted,
+  markRequestOfferRejected,
+  markRequestRecipientRespondedByContractor,
+  type PlatformRequest,
+} from "../requests-store";
 import {
   calculateInternalCostLineTotal,
   calculateLineItemTotal,
@@ -480,6 +485,19 @@ export function setOfferStatus(offerId: string, status: OfferStatus): Offer | nu
   };
   const next = all.map((offer) => (offer.id === offerId ? updated : offer));
   writeStore(next);
+
+  if (status === "sent") {
+    const projectOffers = next.filter((offer) => offer.projectId === updated.projectId);
+    void markRequestRecipientRespondedByContractor(updated.projectId, updated.contractorId, {
+      actorLabel: updated.contractorId,
+      offerCount: projectOffers.length,
+    });
+  } else if (status === "accepted") {
+    void markRequestOfferAccepted(updated.projectId, updated.id);
+  } else if (status === "rejected") {
+    void markRequestOfferRejected(updated.projectId);
+  }
+
   return updated;
 }
 

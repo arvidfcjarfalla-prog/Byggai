@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useActiveProject } from "../active-project-context";
 import {
   deleteFile,
   findEntityByRefId,
@@ -73,6 +74,7 @@ export function FilesBrowser({
   allowShare?: boolean;
 }) {
   const router = useRouter();
+  const { activeProject: selectedDashboardProject } = useActiveProject();
   const [requests, setRequests] = useState<PlatformRequest[]>([]);
   const [projectId, setProjectId] = useState<string>("");
   const [folder, setFolder] = useState<ProjectFolder | "all">("all");
@@ -84,6 +86,14 @@ export function FilesBrowser({
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
   const [editFilename, setEditFilename] = useState("");
   const [editFolder, setEditFolder] = useState<ProjectFolder>("ovrigt");
+  const scopedProjectId = useMemo(() => {
+    if (!selectedDashboardProject) return null;
+    if (workspaceId === "entreprenor") return selectedDashboardProject.id;
+    if (workspaceId === "brf" && selectedDashboardProject.audience === "brf") return selectedDashboardProject.id;
+    if (workspaceId === "privat" && selectedDashboardProject.audience === "privat") return selectedDashboardProject.id;
+    return null;
+  }, [selectedDashboardProject, workspaceId]);
+  const isProjectScoped = Boolean(scopedProjectId);
 
   useEffect(() => {
     const syncRequests = () => {
@@ -93,18 +103,25 @@ export function FilesBrowser({
           : listRequests().filter((request) =>
               workspaceId === "brf" ? request.audience === "brf" : request.audience === "privat"
             );
-      setRequests(filtered);
-      if (!projectId && filtered[0]?.id) {
-        setProjectId(filtered[0].id);
+      const scoped = scopedProjectId
+        ? filtered.filter((request) => request.id === scopedProjectId)
+        : filtered;
+      setRequests(scoped);
+      if (scopedProjectId) {
+        if (projectId !== scopedProjectId) setProjectId(scopedProjectId);
+        return;
       }
-      if (projectId && !filtered.some((request) => request.id === projectId)) {
-        setProjectId(filtered[0]?.id ?? "");
+      if (!projectId && scoped[0]?.id) {
+        setProjectId(scoped[0].id);
+      }
+      if (projectId && !scoped.some((request) => request.id === projectId)) {
+        setProjectId(scoped[0]?.id ?? "");
       }
     };
 
     syncRequests();
     return subscribeRequests(syncRequests);
-  }, [projectId, workspaceId]);
+  }, [projectId, scopedProjectId, workspaceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -351,20 +368,29 @@ export function FilesBrowser({
     <section className="space-y-5 rounded-3xl border border-[#E6DFD6] bg-white p-5 shadow-sm">
       <header className="space-y-3">
         <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <label className="text-xs font-semibold text-[#6B5A47]">
-            Projekt
-            <select
-              value={projectId}
-              onChange={(event) => setProjectId(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
-            >
-              {requests.map((request) => (
-                <option key={request.id} value={request.id}>
-                  {request.title}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isProjectScoped ? (
+            <div className="text-xs font-semibold text-[#6B5A47]">
+              Projekt
+              <div className="mt-1 rounded-xl border border-[#D9D1C6] bg-[#FAF8F5] px-3 py-2 text-sm text-[#2A2520]">
+                {selectedDashboardProject?.title ?? "Valt projekt"}
+              </div>
+            </div>
+          ) : (
+            <label className="text-xs font-semibold text-[#6B5A47]">
+              Projekt
+              <select
+                value={projectId}
+                onChange={(event) => setProjectId(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-[#D9D1C6] bg-white px-3 py-2 text-sm text-[#2A2520]"
+              >
+                {requests.map((request) => (
+                  <option key={request.id} value={request.id}>
+                    {request.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label className="text-xs font-semibold text-[#6B5A47]">
             Sök fil
